@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spanwall</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='5' width='5' height='4' rx='1' fill='%234c9aff'/%3E%3Crect x='7' y='3' width='8' height='5' rx='1' fill='%234c9aff'/%3E%3Crect x='7' y='9' width='8' height='5' rx='1' fill='%232ed3e6'/%3E%3C/svg%3E">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo"></span>Spanwall</div>
+  <nav>
+    <button data-tab="layout" class="active">Layout</button>
+    <button data-tab="library">Library</button>
+    <button data-tab="wallhaven">Wallhaven</button>
+    <button data-tab="desktops">Desktops</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div id="status" class="status">connecting…</div>
+</header>
+
+<main>
+  <!-- LAYOUT ------------------------------------------------------------- -->
+  <section id="tab-layout" class="tab active">
+    <div class="toolbar">
+      <label class="field">Layout
+        <select id="layoutSelect"></select>
+      </label>
+      <span class="sep"></span>
+      <button id="btnIdentify" title="Numbered card on each monitor for 10 s">Identify</button>
+      <button id="btnCalibrate" class="toggle" title="Show a test pattern on the real screens that follows your edits live">Live calibration</button>
+      <button id="btnPhoto" title="Work out the layout from a phone photo">Photo calibration</button>
+      <label class="check"><input type="checkbox" id="chkSnap" checked> Snap</label>
+      <label class="check"><input type="checkbox" id="chkWallpaper" checked> Show wallpaper</label>
+      <button id="btnMoveImg" class="toggle" title="Drag to move the wallpaper behind the monitors; drag a corner or scroll to resize">Move image</button>
+      <button id="btnResetImg" title="Back to the default fill">Reset image</button>
+      <span class="grow"></span>
+      <span id="dirty" class="dirty hidden">unsaved changes</span>
+      <button id="btnRevert" disabled>Revert</button>
+      <button id="btnSave" disabled>Save</button>
+      <button id="btnApply" class="primary" title="Save and re-apply the wallpaper">Save &amp; apply</button>
+    </div>
+    <div class="editor">
+      <div id="canvasWrap" class="canvas-wrap">
+        <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="welcome" class="photo welcome hidden">
+          <div class="photo-head"><b>Welcome to Spanwall</b><button id="btnWelcomeClose" class="x" title="Close">×</button></div>
+          <p class="muted">Spanwall spans one wallpaper across your monitors by where they really are, measured in mm, not how Windows arranges them.</p>
+          <ol>
+            <li><b>Wallpaper folder:</b> <span id="wDir" class="muted"></span> <a href="#" data-goto="settings">change</a></li>
+            <li><b>Find your monitors:</b> <button id="wIdentify">Identify</button> shows a number on each screen.</li>
+            <li><b>Place them:</b> <button id="wPhoto" class="primary">Photo calibration</button> (one phone photo, most accurate),
+              or <button id="wWindows">start from Windows' arrangement</button> and drag them where they really are. Turn on Live calibration to check across the bezels.</li>
+            <li><b>Pick a wallpaper:</b> <a href="#" data-goto="library">Library</a> or <a href="#" data-goto="wallhaven">Wallhaven</a>, then Apply.</li>
+            <li><b>Use it from Claude</b> (optional): <span id="wExt" class="muted"></span></li>
+          </ol>
+          <div class="row"><button id="btnWelcomeDone">Got it</button></div>
+        </div>
+        <div id="photoPanel" class="photo hidden">
+          <div class="photo-head"><b>Photo calibration</b><button id="btnPhotoClose" class="x" title="Close">×</button></div>
+          <ol>
+            <li><b>For a full calibration</b>, show the dot pattern: <button id="btnDots" class="toggle">Show dot pattern</button><br>
+              <span class="muted">To fix a real wallpaper that's a bit off, skip this step (it needs one pattern calibration first).</span></li>
+            <li>From where you normally sit, take one photo with every screen fully in frame (1x lens if it fits). Minimize windows (Win+D) for a wallpaper photo.</li>
+            <li>Drop the photo here, or send it to Claude in chat.
+              <label id="drop" class="drop"><input id="photoFile" type="file" accept="image/jpeg,image/png" hidden>
+                <span>Drop photo or click to choose</span></label>
+              <label class="field">Mode <select id="photoMode"><option value="auto">Auto</option><option value="pattern">Dot pattern</option><option value="wallpaper">Real wallpaper</option></select></label>
+            </li>
+          </ol>
+          <div id="photoResult"></div>
+        </div>
+        <div class="hint">Drag monitors to match your desk. Arrows nudge 1 mm, Shift+arrows 10 mm, Alt+arrows 0.2 mm. Alt while dragging turns snapping off.</div>
+      </div>
+      <aside id="side" class="side">
+        <div class="empty">Select a monitor to edit its position.</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- LIBRARY ------------------------------------------------------------ -->
+  <section id="tab-library" class="tab">
+    <div class="toolbar">
+      <span id="libDir" class="muted"></span>
+      <span class="grow"></span>
+      <label class="field">Apply as <select id="libMode" title="Span: one image across all monitors. Span groups: one image per group (Settings). Per monitor: one image each.">
+        <option value="span">Span</option><option value="groups">Span groups</option><option value="per-display">Per monitor</option></select></label>
+      <button id="btnLibPull" title="Download anything new in your Wallhaven collection (set in Settings)">Pull from Wallhaven</button>
+      <button id="btnLibRefresh">Refresh</button>
+    </div>
+    <div class="toolbar slide">
+      <b>Slideshow</b>
+      <button id="btnSlidePrev" title="Previous (Ctrl+Alt+PgUp)">◀</button>
+      <button id="btnSlideNext" title="Next (Ctrl+Alt+PgDn)">▶</button>
+      <button id="btnSlideToggle" class="toggle" title="Start or pause (Ctrl+Alt+End)">Start</button>
+      <label class="field">every <input id="slideEvery" type="number" min="1" max="10080" style="width:70px"> min</label>
+      <label class="field">order <select id="slideOrder"><option value="shuffle">Shuffle</option><option value="name">By name</option></select></label>
+      <label class="field">as <select id="slideMode"><option value="span">Span</option><option value="groups">Span groups</option><option value="per-display">Per monitor</option></select></label>
+      <span id="slideInfo" class="muted"></span>
+    </div>
+    <div id="libGrid" class="grid"></div>
+  </section>
+
+  <!-- WALLHAVEN ---------------------------------------------------------- -->
+  <section id="tab-wallhaven" class="tab">
+    <form id="whForm" class="toolbar">
+      <input id="whQ" placeholder="Search Wallhaven (tags, e.g. city night, +anime -people)" class="wide" spellcheck="false">
+      <select id="whSort"><option value="relevance">Relevance</option><option value="toplist">Top</option><option value="favorites">Favorites</option><option value="views">Views</option><option value="date_added">Newest</option><option value="random">Random</option></select>
+      <select id="whRange" title="Top list period"><option value="1w">week</option><option value="1M" selected>month</option><option value="3M">3 months</option><option value="1y">year</option></select>
+      <select id="whRatio" title="Aspect ratio"></select>
+      <label class="field">at least <input id="whMin" style="width:100px" spellcheck="false"></label>
+      <select id="whCat" title="Categories"><option value="100">General</option><option value="110">General + anime</option><option value="111">All</option><option value="010">Anime</option></select>
+      <button class="primary">Search</button>
+      <select id="whColl" title="Your Wallhaven collections (favorites)"><option value="">My collections…</option></select>
+    </form>
+    <div id="whInfo" class="muted pad"></div>
+    <div id="whGrid" class="grid"></div>
+    <div class="row pad"><button id="whMore" class="hidden">Load more</button></div>
+  </section>
+
+  <!-- DESKTOPS ----------------------------------------------------------- -->
+  <section id="tab-desktops" class="tab">
+    <div class="panel">
+      <h2>Virtual desktops</h2>
+      <p class="muted">Windows keeps one saved wallpaper per desktop and swaps it in when you switch, which would replace Spanwall's per-monitor slices. Spanwall clears those and applies each desktop's wallpaper itself.</p>
+      <div class="modes">
+        <label><input type="radio" name="dmode" value="same"> <b>Same on all desktops</b><span>One wallpaper everywhere. No work on switches.</span></label>
+        <label><input type="radio" name="dmode" value="individual"> <b>Individual</b><span>Pick a wallpaper per desktop. Unassigned desktops show the last applied one.</span></label>
+        <label><input type="radio" name="dmode" value="panorama"> <b>Panorama</b><span>One very wide image split across your desktops, left to right, so switching slides along it.</span></label>
+      </div>
+      <div id="desktopList"></div>
+      <div id="panoramaPick" class="hidden"><label class="field">Panorama image <select id="panoramaSelect"></select></label></div>
+      <div class="row"><button id="btnDesktopsSave" class="primary">Save desktop settings</button><span id="desktopsMsg" class="muted"></span></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS ----------------------------------------------------------- -->
+  <section id="tab-settings" class="tab">
+    <div class="panel">
+      <h2>Wallpaper folder</h2>
+      <div class="row"><input id="inpDir" class="wide" spellcheck="false"><button id="btnDirSave">Save</button></div>
+      <h2>Layouts</h2>
+      <p class="muted">Each layout remembers which monitors it has. With auto switch on, plugging monitors in or out activates the saved layout made for exactly those monitors and re-applies the wallpaper.</p>
+      <label class="check"><input type="checkbox" id="chkAuto"> Auto switch layouts when monitors change</label>
+      <div class="row">
+        <input id="inpLayoutName" placeholder="new layout name">
+        <button id="btnLayoutCopy" title="Copy the layout shown in the editor">Copy current to</button>
+        <button id="btnLayoutRename">Rename current to</button>
+        <button id="btnLayoutDelete" class="danger">Delete current</button>
+      </div>
+      <div class="row"><button id="btnImportSP">Import Superpaper's arrangement into the current layout</button></div>
+      <h2>Span groups</h2>
+      <p class="muted">Span some monitors together and give the rest their own image. Monitors in the same group share one image; "Own image" gets a separate one. Used when applying "as span groups" and by the slideshow.</p>
+      <div id="groupList"></div>
+      <div class="row"><button id="btnGroupsSave">Save groups</button><button id="btnGroupsClear">Clear (span everything)</button></div>
+      <h2>Startup, tray and hotkeys</h2>
+      <label class="check"><input type="checkbox" id="chkAutostart"> Start Spanwall when I sign in</label>
+      <label class="check"><input type="checkbox" id="chkTray"> Show the tray icon (left click opens this page, right click for next, previous, slideshow and more)</label>
+      <div id="hotkeyList" class="hotkeys"></div>
+      <div class="row"><button id="btnHotkeysSave">Save hotkeys</button><span class="muted">Like ctrl+alt+pgdn. Needs ctrl, alt or win. Leave empty to turn one off.</span></div>
+      <h2>Wallhaven account</h2>
+      <p class="muted">For your collections (favorites) in the Wallhaven tab. The username shows public collections; the API key (from your Wallhaven account settings) also shows private ones. The key is saved only on this PC, sent as a header, and never shown again.</p>
+      <div class="row"><input id="inpWhUser" placeholder="username" spellcheck="false" autocomplete="off">
+        <input id="inpWhKey" type="password" placeholder="API key" autocomplete="off">
+        <button id="btnWhSave">Save</button><button id="btnWhKeyRemove">Remove key</button></div>
+      <label class="check"><input type="checkbox" id="chkWhSync"> Auto-download new wallpapers from my collection
+        <input id="inpWhSync" style="width:140px" spellcheck="false"> into the wallpaper folder (checks every 15 min; never deletes)</label>
+      <div class="row"><button id="btnWhSyncNow">Sync now</button><span id="whSyncInfo" class="muted"></span></div>
+      <h2>About</h2>
+      <p id="about" class="muted"></p>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

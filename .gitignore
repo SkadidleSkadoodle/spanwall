@@ -1,0 +1,17 @@
+# build output
+/bin/
+*.mcpb
+*.exe
+*.test
+*.out
+
+# local runtime data (never commit personal paths, keys or photos)
+/local/
+config.json
+*.local.json
+inbox/
+CLAUDE.local.md
+
+# editors
+.vscode/
+.idea/

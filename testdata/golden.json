@@ -1,0 +1,198 @@
+{
+  "displays": [
+    {
+      "id": "laptop",
+      "resW": 320,
+      "resH": 200,
+      "widthMM": 344.6,
+      "heightMM": 215.4
+    },
+    {
+      "id": "dell",
+      "resW": 430,
+      "resH": 180,
+      "widthMM": 797.2,
+      "heightMM": 333.7
+    },
+    {
+      "id": "acer",
+      "resW": 430,
+      "resH": 180,
+      "widthMM": 797.4,
+      "heightMM": 333.4
+    }
+  ],
+  "offsets": [
+    [
+      0.0,
+      209.0
+    ],
+    [
+      320.0,
+      307.625
+    ],
+    [
+      323.25,
+      0.0
+    ]
+  ],
+  "cases": [
+    {
+      "name": "wide_image",
+      "image": "wide.png",
+      "manual": [],
+      "normResolutions": [
+        [
+          320,
+          200
+        ],
+        [
+          740,
+          310
+        ],
+        [
+          740,
+          310
+        ]
+      ],
+      "crops": [
+        [
+          0,
+          209,
+          320,
+          409
+        ],
+        [
+          320,
+          308,
+          1060,
+          618
+        ],
+        [
+          323,
+          0,
+          1063,
+          310
+        ]
+      ],
+      "canvas": [
+        1063,
+        618
+      ],
+      "slices": [
+        "wide_image_0.png",
+        "wide_image_1.png",
+        "wide_image_2.png"
+      ]
+    },
+    {
+      "name": "tall_image",
+      "image": "tall.png",
+      "manual": [],
+      "normResolutions": [
+        [
+          320,
+          200
+        ],
+        [
+          740,
+          310
+        ],
+        [
+          740,
+          310
+        ]
+      ],
+      "crops": [
+        [
+          0,
+          209,
+          320,
+          409
+        ],
+        [
+          320,
+          308,
+          1060,
+          618
+        ],
+        [
+          323,
+          0,
+          1063,
+          310
+        ]
+      ],
+      "canvas": [
+        1063,
+        618
+      ],
+      "slices": [
+        "tall_image_0.png",
+        "tall_image_1.png",
+        "tall_image_2.png"
+      ]
+    },
+    {
+      "name": "manual_offsets",
+      "image": "wide.png",
+      "manual": [
+        [
+          0,
+          0
+        ],
+        [
+          2.5,
+          -1.5
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "normResolutions": [
+        [
+          320,
+          200
+        ],
+        [
+          740,
+          310
+        ],
+        [
+          740,
+          310
+        ]
+      ],
+      "crops": [
+        [
+          0,
+          209,
+          320,
+          409
+        ],
+        [
+          322,
+          306,
+          1062,
+          616
+        ],
+        [
+          323,
+          0,
+          1063,
+          310
+        ]
+      ],
+      "canvas": [
+        1063,
+        616
+      ],
+      "slices": [
+        "manual_offsets_0.png",
+        "manual_offsets_1.png",
+        "manual_offsets_2.png"
+      ]
+    }
+  ]
+}

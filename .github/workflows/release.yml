@@ -1,0 +1,30 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Build
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart("v")
+          go build -trimpath -ldflags "-s -w -X main.version=$v" -o dist/spanwall.exe ./cmd/spanwall
+          Copy-Item README.md, LICENSE, NOTICE dist/
+          Compress-Archive -Path dist/* -DestinationPath "Spanwall-$v-windows-x64.zip"
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart("v")
+          gh release create "${{ github.ref_name }}" "Spanwall-$v-windows-x64.zip" --title "Spanwall $v" --notes "Download the zip, unzip it anywhere and double-click spanwall.exe to install for your user. See the README for details."
