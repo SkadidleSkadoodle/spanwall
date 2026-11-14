@@ -15,7 +15,7 @@ import (
 
 // Hotkey actions and their defaults.
 var (
-	hotkeyActions  = []string{"next", "previous", "pause", "open"}
+	hotkeyActions  = []string{"next", "previous", "pause", "open", "favorite", "ban"}
 	defaultHotkeys = map[string]string{"next": "ctrl+alt+pgdn", "previous": "ctrl+alt+pgup", "pause": "ctrl+alt+end"}
 )
 
@@ -46,6 +46,8 @@ const (
 	menuPrev
 	menuSlideshow
 	menuIdentify
+	menuFavorite
+	menuBan
 	menuQuit
 )
 
@@ -121,6 +123,9 @@ func (s *Server) trayMenu() []tray.Item {
 		{ID: menuSlideshow, Label: "Slideshow", Checked: on},
 		{ID: menuIdentify, Label: "Identify monitors"},
 		{Separator: true},
+		{ID: menuFavorite, Label: "Favourite this wallpaper"},
+		{ID: menuBan, Label: "Never show this wallpaper again"},
+		{Separator: true},
 		{ID: menuQuit, Label: "Quit Spanwall"},
 	}
 }
@@ -136,13 +141,13 @@ func (s *Server) trayAction(id int) {
 	case menuSlideshow:
 		s.hotkey("pause")
 	case menuIdentify:
-		err := s.showOverlay("identify", 10*time.Second, func(sess *app.Session) error {
-			_, err := sess.ShowIdentifyCards()
-			return err
-		})
-		if err != nil {
+		if _, err := s.toggleIdentify(); err != nil {
 			s.log.Printf("identify: %v", err)
 		}
+	case menuFavorite:
+		s.hotkey("favorite")
+	case menuBan:
+		s.hotkey("ban")
 	case menuQuit:
 		s.stop()
 	}
@@ -168,6 +173,16 @@ func (s *Server) hotkey(action string) {
 		}
 	case "open":
 		openEditor()
+	case "favorite", "ban":
+		var r map[string]any
+		rating := map[string]string{"favorite": "fav", "ban": "ban"}[action]
+		if r, err = s.rateImage("current", rating, "", false); err == nil {
+			if action == "favorite" {
+				s.notify("Favourite", fmt.Sprintf("%v comes up more often in the slideshow", r["image"]), false)
+			} else {
+				s.notify("Won't show again", fmt.Sprintf("%v is banned from the slideshow (undo in the Library)", r["image"]), false)
+			}
+		}
 	}
 	if err != nil {
 		s.log.Printf("%s: %v", action, err)

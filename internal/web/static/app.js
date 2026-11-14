@@ -20,14 +20,16 @@ const S = {
   guides: [],
   vb: null,              // current viewBox {x, y, w, h}
   frame: null,           // framing being edited (the active view's), see act()
-  frames: {},            // key -> {img, ids, w, h, zoom, dx, dy}; key = image, or image|group IDs
-  framesSaved: {},       // key -> {zoom, dx, dy} as stored
+  frames: {},            // key -> {img, ids, w, h, zoom, dx, dy, flipX, flipY}; key = image, or image|group IDs
+  framesSaved: {},       // key -> {zoom, dx, dy, flipX, flipY} as stored
   framesLoading: {},
   activeKey: "",
   moveImg: false,
   imgDrag: null,
   imgResize: null,
   lib: [],
+  folders: [],           // [{name, count, builtin}]
+  libTab: "all",         // all, fav, ban, or a folder name
 };
 
 // ---- API ------------------------------------------------------------------------
@@ -58,6 +60,8 @@ async function loadStatus() {
   $("#status").innerHTML = `<b>${st.monitors}</b> monitors · layout <b>${esc(st.activeLayout)}</b> · desktops <b>${esc(st.desktopMode)}</b>` +
     (st.overlay ? ` · <b style="color:var(--accent2)">${{ calibrate: "calibrating", identify: "identifying", photo: "dot pattern up" }[st.overlay] || st.overlay}</b>` : "");
   $("#btnDots").classList.toggle("on", st.overlay === "photo");
+  $("#btnIdentify").classList.toggle("on", st.overlay === "identify");
+  $("#btnIdentify").textContent = st.overlay === "identify" ? "Hide numbers" : "Identify";
   $("#btnDots").textContent = st.overlay === "photo" ? "Hide dot pattern" : "Show dot pattern";
   S.calibrating = st.overlay === "calibrate";
   $("#btnCalibrate").classList.toggle("on", S.calibrating);
@@ -107,11 +111,12 @@ function isDirty() {
   return false;
 }
 
+// The editable part of a frame, and whether two of them differ.
+const frameVals = (f) => ({ zoom: f.zoom, dx: f.dx, dy: f.dy, flipX: !!f.flipX, flipY: !!f.flipY });
+const frameDiff = (f, g) => Math.abs(f.zoom - g.zoom) > 1e-4 || Math.abs(f.dx - g.dx) > 1e-4 || Math.abs(f.dy - g.dy) > 1e-4 || !!f.flipX !== !!g.flipX || !!f.flipY !== !!g.flipY;
+
 function frameDirty() {
-  return Object.keys(S.frames).some((k) => {
-    const f = S.frames[k], g = S.framesSaved[k];
-    return g && (Math.abs(f.zoom - g.zoom) > 1e-4 || Math.abs(f.dx - g.dx) > 1e-4 || Math.abs(f.dy - g.dy) > 1e-4);
-  });
+  return Object.keys(S.frames).some((k) => S.framesSaved[k] && frameDiff(S.frames[k], S.framesSaved[k]));
 }
 
 // What the editor shows behind the monitors: one view for a spanned image,
@@ -146,8 +151,8 @@ async function loadFrame(v) {
   try {
     const q = "image=" + encodeURIComponent(v.img) + (v.ids ? "&group=" + encodeURIComponent(v.ids.join(",")) : "");
     const r = await api("/api/framing?" + q);
-    S.frames[v.key] = { img: v.img, ids: v.ids, w: r.width, h: r.height, zoom: r.frame.zoom || 1, dx: r.frame.dx || 0, dy: r.frame.dy || 0 };
-    S.framesSaved[v.key] = { zoom: S.frames[v.key].zoom, dx: S.frames[v.key].dx, dy: S.frames[v.key].dy };
+    S.frames[v.key] = { img: v.img, ids: v.ids, w: r.width, h: r.height, zoom: r.frame.zoom || 1, dx: r.frame.dx || 0, dy: r.frame.dy || 0, flipX: !!r.frame.flipX, flipY: !!r.frame.flipY };
+    S.framesSaved[v.key] = frameVals(S.frames[v.key]);
   } catch (e) { /* drawn with the default fill */ }
   render();
 }
@@ -194,6 +199,7 @@ function wallpaperPath() {
 function render() {
   const svg = $("#canvas");
   if (!S.vb) return;
+  updateFlipButtons();
   const { x, y, w, h } = S.vb;
   svg.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
   const b = bbox();
@@ -229,9 +235,12 @@ function render() {
       }
       const r = imgRect(v.b, f);
       const active = v.key === S.activeKey;
-      const a = `href="${href}" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" preserveAspectRatio="none"`;
+      // Flips mirror the image in place, around its own centre.
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      const tf = f.flipX || f.flipY ? ` transform="translate(${cx} ${cy}) scale(${f.flipX ? -1 : 1} ${f.flipY ? -1 : 1}) translate(${-cx} ${-cy})"` : "";
+      const a = `href="${href}" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" preserveAspectRatio="none"${tf}`;
       out += `<image ${a} opacity="${S.moveImg && active ? 0.4 : 0.16}"/>`;
-      out += `<image ${a} clip-path="url(#mv${vi})"/>`;
+      out += `<g clip-path="url(#mv${vi})"><image ${a}/></g>`;
       if (S.moveImg && active) {
         out += `<rect class="imgframe" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`;
         // Corner handles: drag to resize around the opposite corner.
@@ -401,6 +410,11 @@ function initCanvas() {
         render();
         return;
       }
+      if ((e.key === "h" || e.key === "v") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        flipImg(e.key === "h" ? "flipX" : "flipY");
+        return;
+      }
       if (["+", "=", "-", "_"].includes(e.key)) {
         e.preventDefault();
         const b = activeB(), cx = r.x + r.w / 2, cy = r.y + r.h / 2; // zoom about the image centre
@@ -535,7 +549,9 @@ function initToolbar() {
     await loadLayout();
   });
   $("#chkWallpaper").addEventListener("change", render);
-  $("#btnIdentify").addEventListener("click", () => api("/api/identify", { seconds: 10 }).then(() => toast("Showing numbers for 10 s")).catch(fail));
+  $("#btnIdentify").addEventListener("click", () => api("/api/identify", { toggle: true })
+    .then((r) => { toast(r.on ? "Numbers are up. Click Identify again to hide them." : "Numbers hidden, wallpaper restored"); return loadStatus(); })
+    .catch(fail));
   $("#btnCalibrate").addEventListener("click", async () => {
     try {
       if (S.calibrating) {
@@ -559,10 +575,22 @@ function initToolbar() {
     S.moveImg = !S.moveImg;
     $("#btnMoveImg").classList.toggle("on", S.moveImg);
     $("#canvas").classList.toggle("moving-img", S.moveImg);
-    if (S.moveImg) toast("Drag or use the arrow keys to move the wallpaper; drag a corner, scroll or +/- to resize. Save & apply to use it.");
+    if (S.moveImg) toast("Drag or use the arrow keys to move the wallpaper; drag a corner, scroll or +/- to resize; H/V to flip. Save & apply to use it.");
     render();
   });
-  $("#btnResetImg").addEventListener("click", () => { act(); if (S.frame) { Object.assign(S.frame, { zoom: 1, dx: 0, dy: 0 }); render(); } });
+  $("#btnResetImg").addEventListener("click", () => { act(); if (S.frame) { Object.assign(S.frame, { zoom: 1, dx: 0, dy: 0, flipX: false, flipY: false }); render(); } });
+  $("#btnAutoImg").addEventListener("click", async () => {
+    const v = act();
+    if (!v) { toast("Show a wallpaper first (Library: Show in editor, or apply one)", true); return; }
+    try {
+      await api("/api/framing", { image: v.img, group: v.ids ? v.ids.join(",") : "", auto: true });
+      delete S.frames[v.key]; delete S.framesSaved[v.key]; S.framesLoading[v.key] = false;
+      await loadFrame(v);
+      toast(S.status && S.status.smartFrame ? "Smart framing places this image again. Save & apply to use it." : "Back to the plain fill (smart framing is off in Settings)");
+    } catch (e) { fail(e); }
+  });
+  $("#btnFlipX").addEventListener("click", () => flipImg("flipX"));
+  $("#btnFlipY").addEventListener("click", () => flipImg("flipY"));
   $("#btnSave").addEventListener("click", () => save().then(() => toast("Layout saved")).catch(fail));
   $("#btnApply").addEventListener("click", async () => {
     try {
@@ -581,12 +609,27 @@ function initToolbar() {
   });
 }
 
+// Mirror the active wallpaper view left-right (flipX) or top-bottom (flipY).
+function flipImg(axis) {
+  if (!$("#chkWallpaper").checked || !wallpaperPath()) { toast("Show a wallpaper first (Library: Show in editor, or apply one)", true); return; }
+  act();
+  if (!S.frame) { toast("Image still loading, try again", true); return; }
+  S.frame[axis] = !S.frame[axis];
+  updateFlipButtons();
+  render();
+}
+function updateFlipButtons() {
+  act();
+  $("#btnFlipX").classList.toggle("on", !!(S.frame && S.frame.flipX));
+  $("#btnFlipY").classList.toggle("on", !!(S.frame && S.frame.flipY));
+}
+
 async function save() {
   for (const k in S.frames) {
     const f = S.frames[k], g = S.framesSaved[k];
-    if (!g || (Math.abs(f.zoom - g.zoom) < 1e-4 && Math.abs(f.dx - g.dx) < 1e-4 && Math.abs(f.dy - g.dy) < 1e-4)) continue;
-    await api("/api/framing", { image: f.img, group: f.ids ? f.ids.join(",") : "", zoom: f.zoom, dx: f.dx, dy: f.dy });
-    S.framesSaved[k] = { zoom: f.zoom, dx: f.dx, dy: f.dy };
+    if (!g || !frameDiff(f, g)) continue;
+    await api("/api/framing", Object.assign({ image: f.img, group: f.ids ? f.ids.join(",") : "" }, frameVals(f)));
+    S.framesSaved[k] = frameVals(f);
   }
   await api("/api/layout/save", { layout: S.view, placements: plain(S.cur) });
   S.saved = clone(S.cur);
@@ -685,15 +728,73 @@ async function loadLibrary() {
   try {
     const r = await api("/api/wallpapers");
     S.lib = r.images || [];
+    S.folders = r.folders || [];
     $("#libDir").textContent = r.dir;
-    const cur = wallpaperPath();
-    $("#libGrid").innerHTML = S.lib.map((im, i) => `
-      <div class="card ${im.path === cur ? "current" : ""}">
-        <img loading="lazy" src="/api/thumb?w=480&image=${encodeURIComponent(im.path)}" data-i="${i}" title="Show in the layout editor">
-        <div class="meta"><b title="${esc(im.name)}">${esc(im.name)}</b><span class="muted">${im.width}×${im.height} · ${im.ratio}</span></div>
-        <div class="acts"><button data-act="show" data-i="${i}">Show in editor</button><button data-act="apply" data-i="${i}" class="primary">Apply</button></div>
-      </div>`).join("") || `<p class="muted" style="padding:18px">No images in this folder yet.</p>`;
+    renderLibrary();
   } catch (e) { fail(e); }
+}
+
+const inFolder = (im, name) => (im.folders || []).some((f) => f.toLowerCase() === name.toLowerCase());
+
+function renderLibTabs() {
+  const tab = S.libTab;
+  if (!["all", "fav", "ban"].includes(tab) && !S.folders.some((f) => f.name.toLowerCase() === tab.toLowerCase())) S.libTab = "all";
+  const n = (pred) => S.lib.filter(pred).length;
+  const tabs = [["all", "All wallpapers", S.lib.length], ["fav", "Favourites", n((im) => im.rating === "fav")]]
+    .concat(S.folders.map((f) => [f.name, f.name, f.count]));
+  const bans = n((im) => im.rating === "ban");
+  if (bans) tabs.push(["ban", "Banned", bans]);
+  const cur = S.folders.find((f) => f.name.toLowerCase() === S.libTab.toLowerCase());
+  $("#libTabs").innerHTML = tabs.map(([k, label, c]) => `<button data-libtab="${esc(k)}" class="${k.toLowerCase() === S.libTab.toLowerCase() ? "active" : ""}">${esc(label)}<span class="n">${c}</span></button>`).join("") +
+    `<button class="new" data-libnew="1" title="Make a folder; a wallpaper can be in several">+ New folder</button>` +
+    (cur && !cur.builtin ? `<span class="tools"><button data-libren="1">Rename</button><button data-libdel="1" class="danger">Delete folder</button></span>` : "");
+}
+
+function renderLibrary() {
+  renderLibTabs();
+  const cur = wallpaperPath();
+  const t = S.libTab;
+  const keep = (im) => t === "all" || (t === "fav" ? im.rating === "fav" : t === "ban" ? im.rating === "ban" : inFolder(im, t));
+  const cards = S.lib.map((im, i) => !keep(im) ? "" : `
+      <div class="card ${im.path === cur ? "current" : ""} ${im.rating === "ban" ? "banned" : ""}" style="--ar:${im.width && im.height ? Math.min(6, Math.max(0.4, im.width / im.height)).toFixed(4) : 1.7778}">
+        <img loading="lazy" src="/api/thumb?w=${im.width / im.height > 2.2 ? 1200 : 640}&trim=0&image=${encodeURIComponent(im.path)}" data-i="${i}" title="Show in the layout editor">
+        <div class="meta"><b title="${esc(im.name)}">${esc(im.name)}</b><span class="muted">${im.width}×${im.height} · ${im.ratio}</span></div>
+        <div class="rate">
+          <button data-rate="fav" data-i="${i}" class="${im.rating === "fav" ? "on" : ""}" title="Favourite: comes up more often in the slideshow">★</button>
+          <button data-rate="ban" data-i="${i}" class="${im.rating === "ban" ? "on" : ""}" title="Never show in the slideshow">Ban</button>
+          <button class="fbtn" data-fmenu="${i}" title="${esc((im.folders || []).join(", ") || "In no folder")}">Folders${im.folders && im.folders.length ? " (" + im.folders.length + ")" : ""} ▾</button>
+        </div>
+        <div class="acts"><button data-act="show" data-i="${i}">Show in editor</button><button data-act="apply" data-i="${i}" class="primary">Apply</button></div>
+      </div>`).join("");
+  const empty = !S.lib.length ? "No images in this folder yet." : t === "fav" ? "No favourites yet: press ★ on a wallpaper." :
+    t === "all" ? "" : "Nothing here yet: use a wallpaper's Folders ▾ menu to add it.";
+  $("#libGrid").innerHTML = cards.trim() ? cards + `<div class="fill"></div>` : `<p class="muted" style="padding:18px">${empty}</p>`;
+}
+
+// Folder checkboxes for one wallpaper, next to its Folders button.
+function openFolderMenu(i, btn) {
+  const im = S.lib[i];
+  const m = $("#folderMenu");
+  m.innerHTML = S.folders.map((f) => `<label><input type="checkbox" data-fold="${esc(f.name)}" ${inFolder(im, f.name) ? "checked" : ""}> ${esc(f.name)}</label>`).join("") +
+    `<div class="add"><button data-foldnew="1">+ New folder…</button></div>`;
+  m.dataset.i = i;
+  m.classList.remove("hidden");
+  const r = btn.getBoundingClientRect();
+  const h = m.offsetHeight, w = m.offsetWidth;
+  m.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + "px";
+  m.style.top = (r.bottom + 4 + h > innerHeight ? r.top - h - 4 : r.bottom + 4) + "px";
+}
+const closeFolderMenu = () => $("#folderMenu").classList.add("hidden");
+
+async function newFolder(addIndex) {
+  const name = (prompt("Folder name") || "").trim();
+  if (!name) return null;
+  try {
+    await api("/api/folders", { action: "create", name });
+    if (addIndex !== undefined) await api("/api/rate", { image: S.lib[addIndex].path, folder: name, in: true });
+    toast(`Folder ${name} made` + (addIndex !== undefined ? ` with ${S.lib[addIndex].name} in it` : ""));
+    return name;
+  } catch (e) { fail(e); return null; }
 }
 
 function showSlideshow() {
@@ -708,6 +809,10 @@ function showSlideshow() {
   const next = ss.enabled && ss.next ? " · next at " + new Date(ss.next).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
   $("#slideInfo").textContent = (ss.current && ss.current.length ? "now: " + ss.current.join(", ") : "") + next;
   $("#btnSlidePrev").disabled = !ss.canGoBack;
+  const sc = S.status.schedule || {};
+  $("#btnDayNight").classList.toggle("on", !!sc.enabled);
+  $("#btnDayNight").textContent = sc.enabled ? (sc.period === "night" ? "Night ☾" : "Day ☀") : "Day/night";
+  $("#btnDayNight").title = sc.enabled ? `Showing the ${sc.period === "night" ? "Night" : "Day"} folder; click to turn day/night off` : "Show the Day folder by day and the Night folder at night";
 }
 
 function initLibrary() {
@@ -715,14 +820,79 @@ function initLibrary() {
   $("#btnLibPull").addEventListener("click", async (e) => {
     const b = e.target;
     b.disabled = true; b.textContent = "Pulling…";
+    const st = S.status || {};
+    const msgs = [], errs = [];
+    if (st.wallhavenUser || st.wallhavenKey) {
+      try {
+        const r = await api("/api/wallhaven/sync", {});
+        const n = r.downloaded ? r.downloaded.length : 0;
+        msgs.push(n ? `${n} new from ${r.collection}` : `${r.collection} up to date`);
+        if (r.errors && r.errors.length) errs.push(r.errors[0]);
+      } catch (err) { errs.push(err.message); }
+    }
+    const so = st.sources || {};
+    if (so.bing || so.apod || so.wikimedia || so.reddit || so.unsplash) {
+      try {
+        const r = await api("/api/sources/sync", {});
+        const n = r.downloaded ? r.downloaded.length : 0;
+        msgs.push(n ? `${n} new from sources` : "sources up to date");
+        if (r.errors && r.errors.length) errs.push(r.errors[0]);
+      } catch (err) { errs.push(err.message); }
+    }
+    if (!msgs.length && !errs.length) toast("Nothing to pull from yet: set up Wallhaven or sources in Settings", true);
+    else if (errs.length) toast((msgs.length ? msgs.join(" · ") + " · " : "") + errs[0], true);
+    else toast(msgs.join(" · "));
+    await loadLibrary();
+    b.disabled = false; b.textContent = "Pull new wallpapers";
+  });
+  $("#libTabs").addEventListener("click", async (e) => {
+    const t = e.target.closest("[data-libtab]");
+    if (t) { S.libTab = t.dataset.libtab; renderLibrary(); $("#libGrid").scrollTop = 0; return; }
+    if (e.target.closest("[data-libnew]")) { const n = await newFolder(); if (n) { S.libTab = n; await loadLibrary(); } return; }
+    if (e.target.closest("[data-libren]")) {
+      const to = (prompt(`Rename folder ${S.libTab} to`, S.libTab) || "").trim();
+      if (!to || to === S.libTab) return;
+      try { await api("/api/folders", { action: "rename", name: S.libTab, to }); S.libTab = to; toast("Folder renamed"); await loadLibrary(); } catch (err) { fail(err); }
+      return;
+    }
+    if (e.target.closest("[data-libdel]")) {
+      if (!confirm(`Delete the folder ${S.libTab}? Its wallpapers stay in the library.`)) return;
+      try { await api("/api/folders", { action: "delete", name: S.libTab }); toast("Folder deleted"); S.libTab = "all"; await loadLibrary(); } catch (err) { fail(err); }
+    }
+  });
+  $("#folderMenu").addEventListener("change", async (e) => {
+    const c = e.target.closest("[data-fold]");
+    if (!c) return;
+    const im = S.lib[+$("#folderMenu").dataset.i];
     try {
-      const r = await api("/api/wallhaven/sync", {});
-      const n = r.downloaded ? r.downloaded.length : 0;
-      toast(n ? `${n} new from ${r.collection}: ${r.downloaded.join(", ")}` : `Up to date: all ${r.total} from ${r.collection} are here`);
-      if (r.errors && r.errors.length) toast(`${r.errors.length} failed: ${r.errors[0]}`, true);
-      await loadLibrary();
-    } catch (err) { fail(err); }
-    b.disabled = false; b.textContent = "Pull from Wallhaven";
+      const r = await api("/api/rate", { image: im.path, folder: c.dataset.fold, in: c.checked });
+      im.folders = r.folders || [];
+      const f = S.folders.find((x) => x.name === c.dataset.fold);
+      if (f) f.count += c.checked ? 1 : -1;
+      const keepOpen = $("#folderMenu").dataset.i;
+      renderLibrary();
+      const btn = $(`[data-fmenu="${keepOpen}"]`);
+      if (btn) openFolderMenu(+keepOpen, btn); else closeFolderMenu();
+    } catch (err) { fail(err); c.checked = !c.checked; }
+  });
+  $("#folderMenu").addEventListener("click", async (e) => {
+    if (!e.target.closest("[data-foldnew]")) return;
+    const i = +$("#folderMenu").dataset.i;
+    closeFolderMenu();
+    if (await newFolder(i)) await loadLibrary();
+  });
+  document.addEventListener("mousedown", (e) => { if (!e.target.closest("#folderMenu") && !e.target.closest("[data-fmenu]")) closeFolderMenu(); });
+  $("#libGrid").addEventListener("scroll", closeFolderMenu);
+  $("#btnDayNight").addEventListener("click", async () => {
+    const sc = (S.status && S.status.schedule) || {};
+    const on = !sc.enabled;
+    if (on && !sc.dayCount && !sc.nightCount) { toast("Add wallpapers to the Day and Night folders first (Folders ▾ on each wallpaper)", true); return; }
+    try {
+      await api("/api/config", { schedule: { enabled: on } });
+      await loadStatus();
+      const s2 = S.status.schedule;
+      toast(on ? `Day/night on: it's ${s2.period}, showing the ${s2.period === "day" ? "Day" : "Night"} folder` + (s2.sunrise ? ` (sunrise ${s2.sunrise}, sunset ${s2.sunset})` : "") : "Day/night off: the slideshow uses all wallpapers");
+    } catch (e) { fail(e); }
   });
   const step = async (back) => {
     try { const r = await api("/api/slideshow/next", { back }); toast((back ? "Back to " : "Now showing ") + r.images.join(", ")); await loadStatus(); loadLibrary(); } catch (e) { fail(e); }
@@ -736,6 +906,23 @@ function initLibrary() {
   $("#slideOrder").addEventListener("change", (e) => api("/api/slideshow", { order: e.target.value }).then(loadStatus).catch(fail));
   $("#slideMode").addEventListener("change", (e) => api("/api/slideshow", { mode: e.target.value }).then(loadStatus).catch(fail));
   $("#libGrid").addEventListener("click", async (e) => {
+    const rb = e.target.closest("[data-rate]");
+    if (rb) {
+      const im = S.lib[+rb.dataset.i];
+      const rating = im.rating === rb.dataset.rate ? "none" : rb.dataset.rate;
+      try {
+        const r = await api("/api/rate", { image: im.path, rating });
+        toast(rating === "fav" ? `${im.name} is a favourite` : rating === "ban" ? `${im.name} won't show in the slideshow` + (r.skipped ? "; moved on to the next one" : "") : `${im.name}: rating cleared`);
+        await loadLibrary(); if (r.skipped) loadStatus();
+      } catch (err) { fail(err); }
+      return;
+    }
+    const fb = e.target.closest("[data-fmenu]");
+    if (fb) {
+      const m = $("#folderMenu");
+      if (!m.classList.contains("hidden") && m.dataset.i === fb.dataset.fmenu) closeFolderMenu(); else openFolderMenu(+fb.dataset.fmenu, fb);
+      return;
+    }
     const el = e.target.closest("[data-i]");
     if (!el) return;
     const im = S.lib[+el.dataset.i];
@@ -917,6 +1104,7 @@ function loadSettingsExtra() {
   const ws = st.wallhavenSync || {};
   $("#chkWhSync").checked = !!ws.enabled;
   if (document.activeElement !== $("#inpWhSync")) $("#inpWhSync").value = ws.collection || "Spanwall";
+  loadSettingsNew(st);
   $("#whSyncInfo").textContent = ws.lastRun ? `last sync ${new Date(ws.lastRun).toLocaleString()}: ${ws.lastResult}` : "not synced yet";
   // Groups: a select per monitor (group 1..n or own image).
   const groupOf = {};
@@ -925,7 +1113,7 @@ function loadSettingsExtra() {
   $("#groupList").innerHTML = `<div class="glist">` + S.displays.map((d, i) => `<span>${i + 1} · ${esc(d.name)}</span>
     <select data-n="${i + 1}"><option value="0">Own image</option>${Array.from({ length: n }, (_, k) => `<option value="${k + 1}" ${groupOf[i + 1] === k + 1 ? "selected" : ""}>Group ${k + 1}</option>`).join("")}</select>`).join("") + `</div>`;
   if (!$("#hotkeyList").contains(document.activeElement)) {
-    const names = { next: "Next wallpaper", previous: "Previous wallpaper", pause: "Start or pause slideshow", open: "Open this page" };
+    const names = { next: "Next wallpaper", previous: "Previous wallpaper", pause: "Start or pause slideshow", open: "Open this page", favorite: "Favourite this wallpaper", ban: "Never show this wallpaper" };
     $("#hotkeyList").innerHTML = Object.entries(names).map(([a, label]) => `<span>${label}</span><input data-hk="${a}" value="${esc((st.hotkeys || {})[a] || "")}" spellcheck="false">`).join("");
   }
 }
@@ -959,6 +1147,81 @@ function initSettingsExtra() {
     const hk = {};
     $$("#hotkeyList input").forEach((i) => (hk[i.dataset.hk] = i.value.trim().toLowerCase()));
     try { await api("/api/config", { hotkeys: hk }); toast("Hotkeys saved"); await loadStatus(); } catch (e) { fail(e); }
+  });
+}
+
+// ---- settings: setups, smart framing, look, day and night, sources ------------------
+function loadSettingsNew(st) {
+  const ps = (st.profiles || []).slice().sort((a, b) => (b.current - a.current) || b.count - a.count);
+  $("#profileList").innerHTML = ps.length ? `<div class="plist">` + ps.map((p) => `
+    <span>${esc((p.monitors || []).join(" + ") || p.count + " monitors")} ${p.current ? '<span class="cur">connected now</span>' : ""}</span>
+    <span class="muted">layout ${esc(p.layout)} · ${esc(p.mode)} · ${esc((p.images || []).join(", "))}</span>
+    <button data-forget="${esc(p.key)}">Forget</button>`).join("") + `</div>` : `<p class="muted">None yet. Apply a wallpaper and this setup is remembered.</p>`;
+  $("#chkSmart").checked = !!st.smartFrame;
+  const sy = st.sync || {};
+  $("#chkAccent").checked = !!sy.accent;
+  $("#chkLock").checked = !!sy.lockScreen;
+  $("#lookInfo").textContent = sy.last ? "Last: " + sy.last : (sy.accent || sy.lockScreen ? "Takes effect with the next wallpaper." : "");
+  const sc = st.schedule || {};
+  $("#chkSched").checked = !!sc.enabled;
+  if (!$("#sunPick").contains(document.activeElement) && document.activeElement !== $("#schedMode")) {
+    $("#schedMode").value = sc.mode || "sun";
+    if (sc.lat || sc.lon) { $("#inpLat").value = sc.lat; $("#inpLon").value = sc.lon; }
+  }
+  $("#sunPick").classList.toggle("hidden", $("#schedMode").value !== "sun");
+  $("#schedInfo").textContent = `${sc.enabled ? "On" : "Off"} · it's ${sc.period || "?"} now` + (sc.sunrise ? ` · sunrise ${sc.sunrise}, sunset ${sc.sunset}` : "") +
+    (sc.mode === "theme" ? " (Windows is in " + (sc.period === "day" ? "light" : "dark") + " mode)" : "") + ` · Day folder ${sc.dayCount || 0}, Night folder ${sc.nightCount || 0}`;
+  const so = st.sources || {};
+  if (!$("#tab-settings").contains(document.activeElement) || document.activeElement.type === "checkbox") {
+    $$("[data-src]").forEach((c) => (c.checked = !!so[c.dataset.src]));
+    $("#inpSubs").value = so.subreddits || "";
+    $("#inpQuery").value = so.query || "";
+    $("#inpMinW").value = so.minWidth || 2560;
+    $("#inpNasaKey").placeholder = so.nasaKey ? "NASA key saved (paste to replace)" : "NASA API key (optional)";
+    $("#inpUnsplashKey").placeholder = so.unsplashKey ? "Unsplash key saved (paste to replace)" : "Unsplash access key";
+  }
+  $("#srcInfo").textContent = so.lastRun ? `last check ${new Date(so.lastRun).toLocaleString()}: ${so.lastResult}` : "not checked yet";
+}
+
+function initSettingsNew() {
+  const save = (body, msg) => api("/api/config", body).then(async () => { toast(msg); await loadStatus(); loadSettingsExtra(); }).catch(fail);
+  $("#profileList").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-forget]");
+    if (!b) return;
+    try { await api("/api/profiles", { forget: b.dataset.forget }); toast("Setup forgotten"); await loadStatus(); loadSettingsExtra(); } catch (err) { fail(err); }
+  });
+  $("#chkSmart").addEventListener("change", (e) => save({ smartFrame: e.target.checked }, e.target.checked ? "Smart framing on (next wallpaper)" : "Smart framing off"));
+  $("#chkAccent").addEventListener("change", (e) => save({ accent: e.target.checked }, e.target.checked ? "Accent colour follows the wallpaper from the next change" : "Accent colour left alone"));
+  $("#chkLock").addEventListener("change", (e) => save({ lockScreen: e.target.checked }, e.target.checked ? "Lock screen follows the wallpaper from the next change" : "Lock screen left alone"));
+  $("#schedMode").addEventListener("change", () => $("#sunPick").classList.toggle("hidden", $("#schedMode").value !== "sun"));
+  $("#btnGeo").addEventListener("click", () => {
+    if (!navigator.geolocation) { toast("This browser can't share a location; type it in", true); return; }
+    navigator.geolocation.getCurrentPosition((p) => {
+      $("#inpLat").value = p.coords.latitude.toFixed(3); $("#inpLon").value = p.coords.longitude.toFixed(3);
+      toast("Location filled in. Save to use it.");
+    }, (err) => toast("Location unavailable: " + err.message, true), { timeout: 15000 });
+  });
+  $("#btnSchedSave").addEventListener("click", () => {
+    const mode = $("#schedMode").value;
+    const sc = { mode };
+    if (mode === "sun") { sc.lat = parseFloat($("#inpLat").value) || 0; sc.lon = parseFloat($("#inpLon").value) || 0; }
+    save({ schedule: sc }, "Saved");
+  });
+  $("#chkSched").addEventListener("change", (e) => save({ schedule: { enabled: e.target.checked } }, e.target.checked ? "Day and night on" : "Day and night off"));
+  $("#btnSrcSave").addEventListener("click", async () => {
+    const sources = { subreddits: $("#inpSubs").value, query: $("#inpQuery").value, minWidth: parseInt($("#inpMinW").value, 10) || 2560 };
+    $$("[data-src]").forEach((c) => (sources[c.dataset.src] = c.checked));
+    const body = { sources };
+    if ($("#inpNasaKey").value.trim()) body.nasaKey = $("#inpNasaKey").value.trim();
+    if ($("#inpUnsplashKey").value.trim()) body.unsplashKey = $("#inpUnsplashKey").value.trim();
+    if (sources.unsplash && !body.unsplashKey && !(S.status.sources || {}).unsplashKey) { toast("Unsplash needs an access key (free at unsplash.com/developers)", true); return; }
+    await save(body, "Sources saved; checking them now");
+    $("#inpNasaKey").value = ""; $("#inpUnsplashKey").value = "";
+  });
+  $("#btnSrcNow").addEventListener("click", async (e) => {
+    e.target.disabled = true; $("#srcInfo").textContent = "checking…";
+    try { const r = await api("/api/sources/sync", {}); toast(`${r.downloaded ? r.downloaded.length : 0} new from ${r.checked} checked` + (r.errors && r.errors.length ? ` · ${r.errors[0]}` : ""), !!(r.errors && r.errors.length && !(r.downloaded || []).length)); } catch (err) { fail(err); }
+    e.target.disabled = false; await loadStatus(); loadSettingsExtra();
   });
 }
 
@@ -1001,6 +1264,6 @@ window.addEventListener("beforeunload", (e) => {
 });
 
 $$("nav button").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
-initCanvas(); initToolbar(); initWelcome(); initPhoto(); initLibrary(); initWallhaven(); initDesktops(); initSettings(); initSettingsExtra();
+initCanvas(); initToolbar(); initWelcome(); initPhoto(); initLibrary(); initWallhaven(); initDesktops(); initSettings(); initSettingsExtra(); initSettingsNew();
 refresh().then(showWelcomeIfNeeded).catch(fail);
 listen();

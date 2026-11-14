@@ -114,12 +114,16 @@ func register(s *mcp.Server) {
 		})
 
 	type identifyIn struct {
-		Seconds int  `json:"seconds,omitempty" jsonschema:"how long to show the cards, default 10, max 300"`
+		Seconds int  `json:"seconds,omitempty" jsonschema:"how long to show the cards, default 10, max 300 (the editor's button instead toggles them on until clicked again)"`
 		Stop    bool `json:"stop,omitempty" jsonschema:"true to end early and restore the wallpaper"`
 	}
 	add(s, "sw_identify", "Show a numbered test card on each monitor, then restore the wallpaper automatically.",
 		func(in identifyIn) (*mcp.CallToolResult, error) {
-			return postJSON("/api/identify", map[string]any{"seconds": in.Seconds, "stop": in.Stop})
+			sec := in.Seconds
+			if sec <= 0 {
+				sec = 10
+			}
+			return postJSON("/api/identify", map[string]any{"seconds": sec, "stop": in.Stop})
 		})
 
 	type calIn struct {
@@ -333,11 +337,17 @@ func register(s *mcp.Server) {
 		Zoom  float64  `json:"zoom,omitempty" jsonschema:"1 = default fill; 2 = twice as big (0.25 to 10)"`
 		DX    float64  `json:"dx,omitempty" jsonschema:"move the image right by this fraction of its displayed width (negative = left)"`
 		DY    float64  `json:"dy,omitempty" jsonschema:"move the image down by this fraction of its displayed height (negative = up)"`
-		Set   bool     `json:"set,omitempty" jsonschema:"true to save zoom/dx/dy (all zero or zoom 1 resets); false just reads"`
+		FlipX bool     `json:"flipX,omitempty" jsonschema:"mirror the image left-right"`
+		FlipY bool     `json:"flipY,omitempty" jsonschema:"mirror the image top-bottom"`
+		Set   bool     `json:"set,omitempty" jsonschema:"true to save zoom/dx/dy/flips (all unset saves the plain fill); false just reads"`
+		Auto  bool     `json:"auto,omitempty" jsonschema:"true to forget the saved framing so smart framing picks it again"`
 	}
-	add(s, "sw_framing", "Read or set how an image is zoomed and moved behind the monitors (the editor's Move image). Saved per image (and per span group). Re-apply with sw_set_wallpaper to see it.",
+	add(s, "sw_framing", "Read or set how an image is zoomed, moved and flipped behind the monitors (the editor's Move image). Saved per image (and per span group). Re-apply with sw_set_wallpaper to see it.",
 		func(in frameIn) (*mcp.CallToolResult, error) {
 			group := strings.Join(in.Group, ",")
+			if in.Auto {
+				return postJSON("/api/framing", map[string]any{"image": in.Image, "group": group, "auto": true})
+			}
 			if !in.Set {
 				return getJSON("/api/framing?image=" + url.QueryEscape(in.Image) + "&group=" + url.QueryEscape(group))
 			}
@@ -345,7 +355,7 @@ func register(s *mcp.Server) {
 			if z == 0 {
 				z = 1
 			}
-			return postJSON("/api/framing", map[string]any{"image": in.Image, "group": group, "zoom": z, "dx": in.DX, "dy": in.DY})
+			return postJSON("/api/framing", map[string]any{"image": in.Image, "group": group, "zoom": z, "dx": in.DX, "dy": in.DY, "flipX": in.FlipX, "flipY": in.FlipY})
 		})
 
 	type configIn struct {
@@ -356,16 +366,47 @@ func register(s *mcp.Server) {
 		Groups        [][]string        `json:"groups,omitempty" jsonschema:"span groups: lists of monitors (number, ID or name) spanned together in groups mode; [[]] clears"`
 		Autostart     *bool             `json:"autostart,omitempty" jsonschema:"start Spanwall at sign-in"`
 		Tray          *bool             `json:"tray,omitempty" jsonschema:"show the tray icon"`
-		Hotkeys       map[string]string `json:"hotkeys,omitempty" jsonschema:"action (next, previous, pause, open) to combo like ctrl+alt+pgdn; empty string disables"`
+		Hotkeys       map[string]string `json:"hotkeys,omitempty" jsonschema:"action (next, previous, pause, open, favorite, ban) to combo like ctrl+alt+pgdn; empty string disables"`
 		WallhavenUser string            `json:"wallhavenUser,omitempty" jsonschema:"the user's Wallhaven username (the API key is entered by the user in Settings, never here)"`
 		ClearSize     bool              `json:"clearSize,omitempty" jsonschema:"remove the size override for monitor"`
+		SmartFrame    *bool             `json:"smartFrame,omitempty" jsonschema:"frame images without saved framing automatically (subject on screens, not bezels)"`
+		Accent        *bool             `json:"accent,omitempty" jsonschema:"set the Windows accent colour from each new wallpaper"`
+		LockScreen    *bool             `json:"lockScreen,omitempty" jsonschema:"put the main monitor's part of each new wallpaper on the lock screen"`
+		Schedule      *struct {
+			Enabled *bool    `json:"enabled,omitempty" jsonschema:"show the Day folder by day and the Night folder at night"`
+			Mode    string   `json:"mode,omitempty" jsonschema:"sun (sunrise and sunset) or theme (follow Windows light/dark mode)"`
+			Lat     *float64 `json:"lat,omitempty" jsonschema:"latitude, for sun"`
+			Lon     *float64 `json:"lon,omitempty" jsonschema:"longitude (east positive), for sun"`
+		} `json:"schedule,omitempty" jsonschema:"day and night wallpapers (from the Day and Night folders)"`
+		Sources *struct {
+			Bing       *bool   `json:"bing,omitempty" jsonschema:"Bing image of the day"`
+			APOD       *bool   `json:"apod,omitempty" jsonschema:"NASA Astronomy Picture of the Day"`
+			Wikimedia  *bool   `json:"wikimedia,omitempty" jsonschema:"Wikimedia Commons picture of the day"`
+			Reddit     *bool   `json:"reddit,omitempty" jsonschema:"top posts of the week from subreddits"`
+			Subreddits *string `json:"subreddits,omitempty" jsonschema:"comma-separated subreddit names"`
+			Unsplash   *bool   `json:"unsplash,omitempty" jsonschema:"random Unsplash photos (the user adds the access key in Settings)"`
+			Query      *string `json:"query,omitempty" jsonschema:"Unsplash search words"`
+			MinWidth   *int    `json:"minWidth,omitempty" jsonschema:"only keep images at least this wide (px)"`
+		} `json:"sources,omitempty" jsonschema:"extra wallpaper sources, downloaded into the wallpaper folder"`
 	}
-	add(s, "sw_config", "Read the config, or change: wallpaper folder, a monitor's measured size, span groups, start at sign-in, tray icon, hotkeys. With no arguments it just reads.",
+	add(s, "sw_config", "Read the config, or change: wallpaper folder, a monitor's measured size, span groups, start at sign-in, tray icon, hotkeys, smart framing, accent colour and lock screen sync, the day/night schedule, wallpaper sources. With no arguments it just reads.",
 		func(in configIn) (*mcp.CallToolResult, error) {
-			if in.WallpaperDir == "" && in.Monitor == "" && in.Groups == nil && in.Autostart == nil && in.Tray == nil && in.Hotkeys == nil && in.WallhavenUser == "" {
+			if in.WallpaperDir == "" && in.Monitor == "" && in.Groups == nil && in.Autostart == nil && in.Tray == nil && in.Hotkeys == nil && in.WallhavenUser == "" &&
+				in.SmartFrame == nil && in.Accent == nil && in.LockScreen == nil && in.Schedule == nil && in.Sources == nil {
 				return getJSON("/api/config")
 			}
 			body := map[string]any{"monitor": in.Monitor, "widthMM": in.WidthMM, "heightMM": in.HeightMM, "clearSize": in.ClearSize}
+			for k, v := range map[string]*bool{"smartFrame": in.SmartFrame, "accent": in.Accent, "lockScreen": in.LockScreen} {
+				if v != nil {
+					body[k] = *v
+				}
+			}
+			if in.Schedule != nil {
+				body["schedule"] = in.Schedule
+			}
+			if in.Sources != nil {
+				body["sources"] = in.Sources
+			}
 			if in.WallpaperDir != "" {
 				body["wallpaperDir"] = in.WallpaperDir
 			}
@@ -385,6 +426,32 @@ func register(s *mcp.Server) {
 				body["wallhavenUser"] = in.WallhavenUser
 			}
 			return postJSON("/api/config", body)
+		})
+
+	type rateIn struct {
+		Image  string `json:"image,omitempty" jsonschema:"file name or path; empty means the wallpaper on screen"`
+		Rating string `json:"rating,omitempty" jsonschema:"fav (shown more often), ban (never shown by the slideshow; skips it if on screen) or none"`
+		Folder string `json:"folder,omitempty" jsonschema:"a library folder (Day, Night or one the user made) to put the image in or take it out of"`
+		Remove bool   `json:"remove,omitempty" jsonschema:"with folder: take the image out instead of adding it"`
+	}
+	add(s, "sw_rate", "Favourite or ban a wallpaper, or add it to (or remove it from) a library folder such as Day or Night. An image can be in several folders.",
+		func(in rateIn) (*mcp.CallToolResult, error) {
+			return postJSON("/api/rate", map[string]any{"image": in.Image, "rating": in.Rating, "folder": in.Folder, "in": !in.Remove})
+		})
+
+	type foldersIn struct {
+		Action string `json:"action,omitempty" jsonschema:"list (default), create, rename or delete"`
+		Name   string `json:"name,omitempty" jsonschema:"the folder"`
+		To     string `json:"to,omitempty" jsonschema:"new name, for rename"`
+	}
+	add(s, "sw_folders", "List, create, rename or delete library folders (Day and Night are built in; deleting a folder keeps its images).",
+		func(in foldersIn) (*mcp.CallToolResult, error) {
+			return postJSON("/api/folders", map[string]any{"action": in.Action, "name": in.Name, "to": in.To})
+		})
+
+	add(s, "sw_sources_sync", "Check the enabled wallpaper sources (Bing, NASA APOD, Wikimedia, Reddit, Unsplash) now and download new landscape images into the wallpaper folder.",
+		func(in struct{}) (*mcp.CallToolResult, error) {
+			return postJSON("/api/sources/sync", map[string]any{})
 		})
 }
 

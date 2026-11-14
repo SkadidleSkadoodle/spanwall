@@ -46,16 +46,7 @@ func (s *Server) watchMonitors() {
 		}
 		last = sig
 		s.endOverlay(false)
-		v, err := s.session(func(sess *app.Session) (any, error) {
-			if !sess.Cfg.AutoSwitchOn() {
-				return "auto switch off", nil
-			}
-			name, switched, err := sess.ChooseLayout()
-			if err != nil {
-				return nil, err
-			}
-			return fmt.Sprintf("layout %q (switched: %v): %v", name, switched, s.reapply(sess)), nil
-		})
+		v, err := s.session(func(sess *app.Session) (any, error) { return s.monitorsChanged(sess) })
 		s.log.Printf("monitors changed (%s): %v %v", sig, v, err)
 		s.events.publish("monitors")
 	}

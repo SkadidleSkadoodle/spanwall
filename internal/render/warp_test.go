@@ -78,3 +78,23 @@ func TestMeshMatchesWarp(t *testing.T) {
 		}
 	}
 }
+
+func TestFlip(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 4, 2))
+	src.Set(0, 0, color.RGBA{255, 0, 0, 255})
+	f := Flip(src, true, true)
+	if c := f.RGBAAt(3, 1); c.R != 255 {
+		t.Errorf("corner not mirrored: %v", c)
+	}
+	if c := f.RGBAAt(0, 0); c.R != 0 {
+		t.Errorf("origin should be empty: %v", c)
+	}
+	ds := []geometry.Display{{ID: "a", ResW: 4, ResH: 2, WidthMM: 4, HeightMM: 2}}
+	out, err := SlicesFramed(src, ds, []geometry.Rect{{R: 4, B: 2}}, nil, Frame{FlipX: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, r := out[0].RGBAAt(0, 0), out[0].RGBAAt(3, 0); l.R > r.R {
+		t.Errorf("flip X not applied: left %v right %v", l, r)
+	}
+}

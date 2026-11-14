@@ -28,13 +28,16 @@
         <select id="layoutSelect"></select>
       </label>
       <span class="sep"></span>
-      <button id="btnIdentify" title="Numbered card on each monitor for 10 s">Identify</button>
+      <button id="btnIdentify" class="toggle" title="Numbered card on each monitor; click again to hide">Identify</button>
       <button id="btnCalibrate" class="toggle" title="Show a test pattern on the real screens that follows your edits live">Live calibration</button>
       <button id="btnPhoto" title="Work out the layout from a phone photo">Photo calibration</button>
       <label class="check"><input type="checkbox" id="chkSnap" checked> Snap</label>
       <label class="check"><input type="checkbox" id="chkWallpaper" checked> Show wallpaper</label>
       <button id="btnMoveImg" class="toggle" title="Drag to move the wallpaper behind the monitors; drag a corner or scroll to resize">Move image</button>
-      <button id="btnResetImg" title="Back to the default fill">Reset image</button>
+      <button id="btnFlipX" class="toggle" title="Mirror the wallpaper left-right (H)">Flip ↔</button>
+      <button id="btnFlipY" class="toggle" title="Mirror the wallpaper top-bottom (V)">Flip ↕</button>
+      <button id="btnAutoImg" title="Let smart framing place this image again (forgets your own framing of it)">Auto frame</button>
+      <button id="btnResetImg" title="Plain fill, unflipped, no smart framing for this image">Reset image</button>
       <span class="grow"></span>
       <span id="dirty" class="dirty hidden">unsaved changes</span>
       <button id="btnRevert" disabled>Revert</button>
@@ -86,7 +89,7 @@
       <span class="grow"></span>
       <label class="field">Apply as <select id="libMode" title="Span: one image across all monitors. Span groups: one image per group (Settings). Per monitor: one image each.">
         <option value="span">Span</option><option value="groups">Span groups</option><option value="per-display">Per monitor</option></select></label>
-      <button id="btnLibPull" title="Download anything new in your Wallhaven collection (set in Settings)">Pull from Wallhaven</button>
+      <button id="btnLibPull" title="Download anything new from your Wallhaven collection and the sources turned on in Settings">Pull new wallpapers</button>
       <button id="btnLibRefresh">Refresh</button>
     </div>
     <div class="toolbar slide">
@@ -96,10 +99,13 @@
       <button id="btnSlideToggle" class="toggle" title="Start or pause (Ctrl+Alt+End)">Start</button>
       <label class="field">every <input id="slideEvery" type="number" min="1" max="10080" style="width:70px"> min</label>
       <label class="field">order <select id="slideOrder"><option value="shuffle">Shuffle</option><option value="name">By name</option></select></label>
+      <button id="btnDayNight" class="toggle" title="Show the Day folder by day and the Night folder at night">Day/night</button>
       <label class="field">as <select id="slideMode"><option value="span">Span</option><option value="groups">Span groups</option><option value="per-display">Per monitor</option></select></label>
       <span id="slideInfo" class="muted"></span>
     </div>
+    <div id="libTabs" class="libtabs"></div>
     <div id="libGrid" class="grid"></div>
+    <div id="folderMenu" class="foldermenu hidden"></div>
   </section>
 
   <!-- WALLHAVEN ---------------------------------------------------------- -->
@@ -150,6 +156,32 @@
         <button id="btnLayoutDelete" class="danger">Delete current</button>
       </div>
       <div class="row"><button id="btnImportSP">Import Superpaper's arrangement into the current layout</button></div>
+      <h2>Monitor setups</h2>
+      <p class="muted">Each set of monitors you use (docked, laptop only, …) remembers its layout and wallpaper. When you dock or undock, that setup comes back as you left it. A setup is saved whenever you apply a wallpaper with it.</p>
+      <div id="profileList"></div>
+      <h2>Smart framing</h2>
+      <label class="check"><input type="checkbox" id="chkSmart"> Frame wallpapers automatically so their subject lands on screens, not bezels or gaps</label>
+      <p class="muted">Applies to images you haven't framed yourself with Move image. Auto frame in the editor goes back to it after you have.</p>
+      <h2>Windows look</h2>
+      <label class="check"><input type="checkbox" id="chkAccent"> Set the Windows accent colour from each new wallpaper</label>
+      <label class="check"><input type="checkbox" id="chkLock"> Put the main monitor's part of each new wallpaper on the lock screen</label>
+      <p id="lookInfo" class="muted"></p>
+      <h2>Day and night</h2>
+      <p class="muted">Rotate through the Day folder by day and the Night folder at night (add wallpapers to them in the Library). The wallpaper changes when day turns to night and back; with the slideshow on, it rotates within the current folder. The Day/night button in the Library turns this on and off.</p>
+      <label class="check"><input type="checkbox" id="chkSched"> Day and night on</label>
+      <div class="row"><label class="field">Night starts <select id="schedMode"><option value="sun">at sunset (sunrise ends it)</option><option value="theme">when Windows switches to dark mode</option></select></label>
+        <span id="sunPick" class="row"><input id="inpLat" style="width:110px" placeholder="latitude"><input id="inpLon" style="width:110px" placeholder="longitude"><button id="btnGeo" title="Ask this browser for your location">Use my location</button></span>
+        <button id="btnSchedSave">Save</button></div>
+      <p id="schedInfo" class="muted"></p>
+      <h2>Other wallpaper sources</h2>
+      <p class="muted">Download new images into the wallpaper folder (checked every 6 hours, never deletes). Only landscape images at least the minimum width are kept.</p>
+      <label class="check"><input type="checkbox" data-src="bing"> Bing image of the day (4K)</label>
+      <label class="check"><input type="checkbox" data-src="wikimedia"> Wikimedia Commons picture of the day</label>
+      <label class="check"><input type="checkbox" data-src="apod"> NASA Astronomy Picture of the Day <input id="inpNasaKey" type="password" style="width:200px" placeholder="NASA API key (optional)" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" data-src="reddit"> Reddit, top of the week from <input id="inpSubs" style="width:260px" spellcheck="false"></label>
+      <label class="check"><input type="checkbox" data-src="unsplash"> Unsplash photos of <input id="inpQuery" style="width:140px" spellcheck="false"> <input id="inpUnsplashKey" type="password" style="width:200px" placeholder="Unsplash access key" autocomplete="off"></label>
+      <div class="row"><label class="field">Minimum width <input id="inpMinW" type="number" min="640" max="20000" step="10" style="width:90px"> px</label>
+        <button id="btnSrcSave">Save</button><button id="btnSrcNow">Check now</button><span id="srcInfo" class="muted"></span></div>
       <h2>Span groups</h2>
       <p class="muted">Span some monitors together and give the rest their own image. Monitors in the same group share one image; "Own image" gets a separate one. Used when applying "as span groups" and by the slideshow.</p>
       <div id="groupList"></div>

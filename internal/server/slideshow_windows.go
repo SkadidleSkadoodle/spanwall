@@ -58,7 +58,7 @@ func (s *Server) slideStep(back bool) (any, error) {
 			mode = "span"
 		}
 		count := app.SlideshowCount(mode, len(sess.SpanGroups()), len(sess.Monitors))
-		pick, hist, err := app.PickSlides(names, ss, count, back, rng)
+		pick, hist, err := app.PickSlides(names, ss, count, back, rng, app.SlideWeights(lib, sess.Cfg, period(sess.Cfg, time.Now())))
 		if err != nil {
 			return nil, err
 		}
@@ -87,6 +87,7 @@ func (s *Server) slideStep(back bool) (any, error) {
 // slideshowLoop changes the wallpaper when the slideshow is due.
 func (s *Server) slideshowLoop() {
 	for range time.Tick(20 * time.Second) {
+		s.checkSchedule()
 		due, _ := s.session(func(sess *app.Session) (any, error) {
 			ss := &sess.Cfg.Slideshow
 			if !ss.Enabled {

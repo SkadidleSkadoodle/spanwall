@@ -102,9 +102,9 @@ func (s *Session) ensureCached(req ApplyRequest) (files []string, cached bool, e
 		if err != nil {
 			return nil, false, fmt.Errorf("image not found: %s", p)
 		}
-		fmt.Fprintf(key, "%s|%d|%d|%v|", p, st.Size(), st.ModTime().UnixNano(), s.FrameFor(p))
+		fmt.Fprintf(key, "%s|%d|%d|%v|", p, st.Size(), st.ModTime().UnixNano(), s.FrameState(p, nil))
 		for _, g := range s.SpanGroups() {
-			fmt.Fprintf(key, "%v|", s.FrameForGroup(p, s.GroupIDs(g)))
+			fmt.Fprintf(key, "%v|", s.FrameState(p, s.GroupIDs(g)))
 		}
 	}
 	for i, d := range s.Geometry() {

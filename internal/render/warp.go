@@ -74,6 +74,9 @@ func SlicesFramed(src image.Image, ds []geometry.Display, crops []geometry.Rect,
 	if !anyWarp && fr.Identity() {
 		return Slices(src, ds, crops) // exact Superpaper path
 	}
+	if fr.FlipX || fr.FlipY {
+		src = Flip(src, fr.FlipX, fr.FlipY)
+	}
 	cw, ch := geometry.Canvas(crops)
 	b := src.Bounds()
 	f, err := FrameFill(b.Dx(), b.Dy(), cw, ch, fr)
@@ -84,7 +87,7 @@ func SlicesFramed(src image.Image, ds []geometry.Display, crops []geometry.Rect,
 	var rgba *image.RGBA
 	for i := range ds {
 		dst := image.NewRGBA(image.Rect(0, 0, ds[i].ResW, ds[i].ResH))
-		if !fr.Identity() {
+		if fr.Moved() {
 			draw.Draw(dst, dst.Rect, image.Black, image.Point{}, draw.Src)
 		}
 		if warps[i] == nil {
@@ -107,21 +110,62 @@ func SlicesFramed(src image.Image, ds []geometry.Display, crops []geometry.Rect,
 
 // Frame zooms and moves the image on the canvas. Zoom is relative to the
 // default fill (0 or 1 = fill); DX, DY move the image's centre by that
-// fraction of its displayed width and height.
+// fraction of its displayed width and height. FlipX, FlipY mirror the image
+// in place (left-right, top-bottom) before it is placed.
 type Frame struct {
-	Zoom float64 `json:"zoom"`
-	DX   float64 `json:"dx"`
-	DY   float64 `json:"dy"`
+	Zoom  float64 `json:"zoom"`
+	DX    float64 `json:"dx"`
+	DY    float64 `json:"dy"`
+	FlipX bool    `json:"flipX,omitempty"`
+	FlipY bool    `json:"flipY,omitempty"`
 }
 
 // Identity reports whether fr leaves the default fill unchanged.
-func (fr Frame) Identity() bool {
-	return (fr.Zoom == 0 || fr.Zoom == 1) && fr.DX == 0 && fr.DY == 0
+func (fr Frame) Identity() bool { return !fr.Moved() && !fr.FlipX && !fr.FlipY }
+
+// Moved reports whether fr zooms or moves the image (flips aside).
+func (fr Frame) Moved() bool { return !((fr.Zoom == 0 || fr.Zoom == 1) && fr.DX == 0 && fr.DY == 0) }
+
+// Flip returns a mirrored copy of src (bounds kept).
+func Flip(src image.Image, fx, fy bool) *image.RGBA {
+	b := src.Bounds()
+	in, ok := src.(*image.RGBA)
+	if !ok {
+		in = image.NewRGBA(b)
+		draw.Draw(in, b, src, b.Min, draw.Src)
+	}
+	out := image.NewRGBA(b)
+	w, h := b.Dx(), b.Dy()
+	var wg sync.WaitGroup
+	for y0 := 0; y0 < h; y0 += 64 {
+		wg.Add(1)
+		go func(y0 int) {
+			defer wg.Done()
+			for y := y0; y < min(y0+64, h); y++ {
+				sy := y
+				if fy {
+					sy = h - 1 - y
+				}
+				srow := in.Pix[sy*in.Stride : sy*in.Stride+w*4]
+				drow := out.Pix[y*out.Stride : y*out.Stride+w*4]
+				if !fx {
+					copy(drow, srow)
+					continue
+				}
+				for x := 0; x < w; x++ {
+					copy(drow[x*4:x*4+4], srow[(w-1-x)*4:(w-1-x)*4+4])
+				}
+			}
+		}(y0)
+	}
+	wg.Wait()
+	return out
 }
 
-// FrameFill is FillTransform with fr applied.
+// FrameFill is FillTransform with fr's zoom and move applied (flips don't
+// change where the image sits).
 func FrameFill(srcW, srcH, cw, ch int, fr Frame) (Fill, error) {
-	if fr.Identity() {
+	if !fr.Moved() {
 		return FillTransform(srcW, srcH, cw, ch)
 	}
 	if srcW <= 0 || srcH <= 0 || cw <= 0 || ch <= 0 {

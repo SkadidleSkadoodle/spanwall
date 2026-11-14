@@ -126,6 +126,8 @@ func (s *Session) Apply(req ApplyRequest) (*ApplyResult, error) {
 	res.Applied = true
 	cleanOld(dir, stamp)
 	s.Cfg.LastApplied = &config.Applied{Mode: req.Mode, Images: req.Images, Layout: res.Layout}
+	s.rememberProfile(res.Layout, req.Mode, req.Images)
+	s.syncLook(slices, res.Slices)
 	if err := s.Save(); err != nil {
 		return nil, err
 	}
@@ -188,7 +190,8 @@ func (s *Session) render(req ApplyRequest, ds []geometry.Display, scale float64)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		slices, n, err := s.spanSlices(src, ds, full, ps, nil, s.FrameFor(req.Images[0]))
+		fr, saved := s.SavedFrame(req.Images[0], nil)
+		slices, n, err := s.spanSlices(src, ds, full, ps, nil, fr, !saved && s.Cfg.SmartFrameOn())
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -214,9 +217,13 @@ func (s *Session) render(req ApplyRequest, ds []geometry.Display, scale float64)
 				}
 				cache[path] = src
 			}
-			fr := s.FrameForGroup(path, s.GroupIDs(idx))
+			fr, saved := s.SavedFrame(path, s.GroupIDs(idx))
+			auto := !saved && s.Cfg.SmartFrameOn()
 			if len(idx) == 1 {
 				d := ds[idx[0]]
+				if auto {
+					fr = render.AutoFrame(src, d.ResW, d.ResH, []geometry.Rect{{R: d.ResW, B: d.ResH}})
+				}
 				one, err := render.SlicesFramed(src, []geometry.Display{d}, []geometry.Rect{{R: d.ResW, B: d.ResH}}, nil, fr)
 				if err != nil {
 					return nil, nil, nil, err
@@ -224,7 +231,7 @@ func (s *Session) render(req ApplyRequest, ds []geometry.Display, scale float64)
 				slices[idx[0]] = one[0]
 				continue
 			}
-			sub, n, err := s.spanSlices(src, ds, full, ps, idx, fr)
+			sub, n, err := s.spanSlices(src, ds, full, ps, idx, fr, auto)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -263,28 +270,44 @@ func (s *Session) render(req ApplyRequest, ds []geometry.Display, scale float64)
 	return nil, nil, nil, fmt.Errorf("unknown mode %q (span, groups, per-display)", req.Mode)
 }
 
-// spanSlices spans src across the monitors in idx (all when idx is nil),
-// using their layout positions, and returns their slices in idx order.
-func (s *Session) spanSlices(src image.Image, ds, full []geometry.Display, ps []geometry.Placement, idx []int, fr render.Frame) ([]*image.RGBA, []string, error) {
+// spanGeometry picks the monitors in idx (all when nil) and lays them out:
+// their displays (apparent sizes), placements and canvas crops.
+func spanGeometry(ds []geometry.Display, ps []geometry.Placement, idx []int) ([]int, []geometry.Display, []geometry.Placement, []geometry.Rect, error) {
 	if idx == nil {
 		idx = make([]int, len(ds))
 		for i := range idx {
 			idx[i] = i
 		}
 	}
-	sd, sf, sp := make([]geometry.Display, len(idx)), make([]geometry.Display, len(idx)), make([]geometry.Placement, len(idx))
+	sd, sp := make([]geometry.Display, len(idx)), make([]geometry.Placement, len(idx))
 	for k, i := range idx {
-		sd[k], sf[k], sp[k] = ds[i], full[i], ps[i]
+		sd[k], sp[k] = ds[i], ps[i]
 	}
 	sd = geometry.Apparent(sd, sp)
-	sf = geometry.Apparent(sf, sp)
 	offs, err := geometry.OffsetsFromPlacements(sd, sp)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	crops, err := geometry.Crops(sd, offs, nil)
+	return idx, sd, sp, crops, err
+}
+
+// spanSlices spans src across the monitors in idx (all when idx is nil),
+// using their layout positions, and returns their slices in idx order.
+// With auto, fr is replaced by an automatic framing (render.AutoFrame).
+func (s *Session) spanSlices(src image.Image, ds, full []geometry.Display, ps []geometry.Placement, idx []int, fr render.Frame, auto bool) ([]*image.RGBA, []string, error) {
+	idx, sd, sp, crops, err := spanGeometry(ds, ps, idx)
 	if err != nil {
 		return nil, nil, err
 	}
-	crops, err := geometry.Crops(sd, offs, nil)
-	if err != nil {
-		return nil, nil, err
+	sf := make([]geometry.Display, len(idx))
+	for k, i := range idx {
+		sf[k] = full[i]
+	}
+	sf = geometry.Apparent(sf, sp)
+	if auto {
+		cw, ch := geometry.Canvas(crops)
+		fr = render.AutoFrame(src, cw, ch, crops)
 	}
 	slices, err := render.SlicesFramed(src, sd, crops, warpsFor(sd, sp), fr)
 	if err != nil {
@@ -296,6 +319,9 @@ func (s *Session) spanSlices(src image.Image, ds, full []geometry.Display, ps []
 	f, _ := render.FrameFill(b.Dx(), b.Dy(), cw, ch, fr)
 	srcPPI := geometry.MaxPPI(sd) / f.SX // scale cancels: both PPI and canvas shrink with it
 	notes = append(notes, fmt.Sprintf("source %dx%d covers the layout at %.0f PPI", b.Dx(), b.Dy(), srcPPI))
+	if auto && !fr.Identity() {
+		notes = append(notes, fmt.Sprintf("smart framing: zoom %.2f, moved %.0f%% across and %.0f%% down", max(fr.Zoom, 1), fr.DX*100, fr.DY*100))
+	}
 	for k, d := range sf {
 		if d.PPI() > srcPPI*1.05 {
 			notes = append(notes, fmt.Sprintf("%s is %.0f PPI, so its slice is upscaled %.1fx", s.Monitors[idx[k]].Name, d.PPI(), d.PPI()/srcPPI))
@@ -455,33 +481,85 @@ func (s *Session) GroupIDs(idx []int) []string {
 	return ids
 }
 
-// FrameFor is the saved framing of an image spanned across all monitors
-// (identity if none).
-func (s *Session) FrameFor(path string) render.Frame { return s.FrameForGroup(path, nil) }
-
-// FrameForGroup is the saved framing of an image in a span group.
-func (s *Session) FrameForGroup(path string, groupIDs []string) render.Frame {
+// SavedFrame is the saved framing of an image (spanned across all
+// monitors, or in the span group groupIDs) and whether there is one.
+func (s *Session) SavedFrame(path string, groupIDs []string) (render.Frame, bool) {
 	f, ok := s.Cfg.Framing[FrameKey(path, groupIDs)]
 	if !ok {
-		return render.Frame{}
+		return render.Frame{}, false
 	}
-	return render.Frame{Zoom: f.Zoom, DX: f.DX, DY: f.DY}
+	return render.Frame{Zoom: f.Zoom, DX: f.DX, DY: f.DY, FlipX: f.FlipX, FlipY: f.FlipY}, true
 }
 
-// SetFrame saves (or with an identity frame, clears) an image's framing,
-// for a span group when groupIDs is set.
+// FrameState describes how an image is framed, for cache keys: the saved
+// frame, or "auto" when smart framing decides.
+func (s *Session) FrameState(path string, groupIDs []string) string {
+	if fr, ok := s.SavedFrame(path, groupIDs); ok {
+		return fmt.Sprint(fr)
+	}
+	if s.Cfg.SmartFrameOn() {
+		return "auto"
+	}
+	return "fill"
+}
+
+// AutoFrameFor works out the smart framing of an image spanned across all
+// monitors, or across the span group groupIDs, exactly as applying it
+// would.
+func (s *Session) AutoFrameFor(path string, groupIDs []string) (render.Frame, error) {
+	src, err := imageio.Load(path)
+	if err != nil {
+		return render.Frame{}, err
+	}
+	src = imageio.TrimBars(src)
+	ds := s.Geometry()
+	var idx []int
+	for _, id := range groupIDs {
+		for i, m := range s.Monitors {
+			if m.ID == id {
+				idx = append(idx, i)
+			}
+		}
+	}
+	if len(idx) == 1 {
+		d := ds[idx[0]]
+		return render.AutoFrame(src, d.ResW, d.ResH, []geometry.Rect{{R: d.ResW, B: d.ResH}}), nil
+	}
+	ps, err := s.Placements("")
+	if err != nil {
+		return render.Frame{}, err
+	}
+	_, _, _, crops, err := spanGeometry(ds, ps, idx)
+	if err != nil {
+		return render.Frame{}, err
+	}
+	cw, ch := geometry.Canvas(crops)
+	return render.AutoFrame(src, cw, ch, crops), nil
+}
+
+// ClearFrame forgets an image's saved framing, so smart framing (or the
+// plain fill, with smart framing off) decides again.
+func (s *Session) ClearFrame(path string, groupIDs []string) error {
+	delete(s.Cfg.Framing, FrameKey(path, groupIDs))
+	return s.Save()
+}
+
+// SetFrame saves an image's framing, for a span group when groupIDs is
+// set. An identity frame is saved too: it means "plain fill, no smart
+// framing" for this image.
 func (s *Session) SetFrame(path string, groupIDs []string, fr render.Frame) error {
 	k := FrameKey(path, groupIDs)
-	if fr.Identity() {
-		delete(s.Cfg.Framing, k)
-	} else {
+	{
+		if fr.Zoom == 0 {
+			fr.Zoom = 1
+		}
 		if fr.Zoom < 0.25 || fr.Zoom > 10 || math.Abs(fr.DX) > 5 || math.Abs(fr.DY) > 5 {
 			return fmt.Errorf("framing out of range (zoom 0.25 to 10)")
 		}
 		if s.Cfg.Framing == nil {
 			s.Cfg.Framing = map[string]config.Frame{}
 		}
-		s.Cfg.Framing[k] = config.Frame{Zoom: fr.Zoom, DX: fr.DX, DY: fr.DY}
+		s.Cfg.Framing[k] = config.Frame{Zoom: fr.Zoom, DX: fr.DX, DY: fr.DY, FlipX: fr.FlipX, FlipY: fr.FlipY}
 	}
 	return s.Save()
 }

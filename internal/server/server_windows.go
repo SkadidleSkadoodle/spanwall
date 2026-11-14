@@ -50,6 +50,7 @@ type Server struct {
 	proposal *app.Proposal // last photo result, waiting to be applied
 	tray     *tray.Tray
 	syncMu   sync.Mutex // one Wallhaven sync at a time
+	sourceMu sync.Mutex // one sources run at a time
 	lastWarn string     // last warning notified (to avoid repeats)
 }
 
@@ -85,6 +86,7 @@ func Run() error {
 	go s.slideshowLoop()
 	loadWallhavenKey()
 	go s.wallhavenSyncLoop()
+	go s.sourcesLoop()
 	s.startTray()
 
 	s.http = &http.Server{Handler: s.routes(), ReadHeaderTimeout: 10 * time.Second}
@@ -168,6 +170,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/wallhaven/collections", s.wallhavenCollections)
 	mux.HandleFunc("GET /api/wallhaven/collection", s.wallhavenCollection)
 	mux.HandleFunc("POST /api/wallhaven/sync", s.wallhavenSyncNow)
+	mux.HandleFunc("POST /api/sources/sync", s.sourcesSyncNow)
+	mux.HandleFunc("POST /api/rate", s.rate)
+	mux.HandleFunc("POST /api/folders", s.folders)
+	mux.HandleFunc("POST /api/profiles", s.forgetProfile)
 	mux.HandleFunc("GET /api/desktops", s.getDesktops)
 	mux.HandleFunc("POST /api/desktops", s.setDesktops)
 	mux.HandleFunc("GET /api/config", s.getConfig)
@@ -249,6 +255,14 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 			"wallhavenKey":  wallhaven.Key != "",
 			"wallhavenSync": map[string]any{"enabled": sess.Cfg.WallhavenSync.Enabled, "collection": syncLabel(sess.Cfg),
 				"lastRun": sess.Cfg.WallhavenSync.LastRun, "lastResult": sess.Cfg.WallhavenSync.LastResult},
+			"smartFrame": sess.Cfg.SmartFrameOn(),
+			"sync":       map[string]any{"accent": sess.Cfg.Sync.Accent, "lockScreen": sess.Cfg.Sync.LockScreen, "last": app.LookResult()},
+			"schedule":   scheduleInfo(sess.Cfg),
+			"profiles":   profilesInfo(sess),
+			"sources": map[string]any{"bing": sess.Cfg.Sources.Bing, "apod": sess.Cfg.Sources.APOD, "wikimedia": sess.Cfg.Sources.Wikimedia,
+				"reddit": sess.Cfg.Sources.Reddit, "subreddits": strings.Join(subreddits(sess.Cfg), ","), "unsplash": sess.Cfg.Sources.Unsplash,
+				"query": nonEmpty(sess.Cfg.Sources.Query, "landscape"), "minWidth": minWidth(sess.Cfg), "nasaKey": readSecret("nasa") != "",
+				"unsplashKey": readSecret("unsplash") != "", "lastRun": sess.Cfg.Sources.LastRun, "lastResult": sess.Cfg.Sources.LastResult},
 		}, nil
 	})
 	writeJSON(w, v, err)
@@ -373,7 +387,16 @@ func (s *Server) wallpapers(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"dir": dir, "images": imgs}, nil
+		type row struct {
+			app.LibraryImage
+			Rating  string   `json:"rating,omitempty"`
+			Folders []string `json:"folders"`
+		}
+		out := make([]row, len(imgs))
+		for i, im := range imgs {
+			out[i] = row{im, sess.Cfg.Ratings[strings.ToLower(im.Name)], sess.Cfg.FoldersOf(im.Name)}
+		}
+		return map[string]any{"dir": dir, "images": out, "folders": foldersInfo(sess.Cfg, imgs)}, nil
 	})
 	writeJSON(w, v, err)
 }
@@ -403,11 +426,33 @@ func (s *Server) setConfig(w http.ResponseWriter, r *http.Request) {
 		// Collection auto-download.
 		WallhavenSync     *bool   `json:"wallhavenSync"`
 		WallhavenSyncName *string `json:"wallhavenSyncCollection"`
+		SmartFrame        *bool   `json:"smartFrame"`
+		Accent            *bool   `json:"accent"`
+		LockScreen        *bool   `json:"lockScreen"`
+		Schedule          *struct {
+			Enabled *bool    `json:"enabled"`
+			Mode    string   `json:"mode"`
+			Lat     *float64 `json:"lat"`
+			Lon     *float64 `json:"lon"`
+		} `json:"schedule"`
+		Sources *struct {
+			Bing       *bool   `json:"bing"`
+			APOD       *bool   `json:"apod"`
+			Wikimedia  *bool   `json:"wikimedia"`
+			Reddit     *bool   `json:"reddit"`
+			Subreddits *string `json:"subreddits"`
+			Unsplash   *bool   `json:"unsplash"`
+			Query      *string `json:"query"`
+			MinWidth   *int    `json:"minWidth"`
+		} `json:"sources"`
+		NASAKey     *string `json:"nasaKey"`
+		UnsplashKey *string `json:"unsplashKey"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeJSON(w, nil, err)
 		return
 	}
+	switchSchedule := false
 	v, err := s.session(func(sess *app.Session) (any, error) {
 		if req.WallpaperDir != nil {
 			if st, err := os.Stat(*req.WallpaperDir); err != nil || !st.IsDir() {
@@ -463,10 +508,83 @@ func (s *Server) setConfig(w http.ResponseWriter, r *http.Request) {
 				return nil, err
 			}
 		}
+		if req.NASAKey != nil {
+			if err := writeSecret("nasa", *req.NASAKey); err != nil {
+				return nil, err
+			}
+		}
+		if req.UnsplashKey != nil {
+			if err := writeSecret("unsplash", *req.UnsplashKey); err != nil {
+				return nil, err
+			}
+		}
+		if req.SmartFrame != nil {
+			sess.Cfg.SmartFrame = req.SmartFrame
+		}
+		if req.Accent != nil {
+			sess.Cfg.Sync.Accent = *req.Accent
+		}
+		if req.LockScreen != nil {
+			sess.Cfg.Sync.LockScreen = *req.LockScreen
+		}
+		if sc := req.Schedule; sc != nil {
+			c := &sess.Cfg.Schedule
+			if sc.Lat != nil && sc.Lon != nil {
+				if *sc.Lat < -90 || *sc.Lat > 90 || *sc.Lon < -180 || *sc.Lon > 180 {
+					return nil, fmt.Errorf("latitude is -90 to 90 and longitude -180 to 180")
+				}
+				c.Lat, c.Lon = *sc.Lat, *sc.Lon
+			}
+			switch sc.Mode {
+			case "":
+			case "theme":
+				c.Mode = "theme"
+			case "sun":
+				if c.Lat == 0 && c.Lon == 0 {
+					return nil, fmt.Errorf("sunrise and sunset need your latitude and longitude")
+				}
+				c.Mode = "sun"
+			default:
+				return nil, fmt.Errorf("schedule mode is sun or theme")
+			}
+			if sc.Enabled != nil {
+				if *sc.Enabled && !c.Enabled {
+					switchSchedule = true
+				}
+				c.Enabled = *sc.Enabled
+			}
+			c.Current = period(sess.Cfg, time.Now())
+		}
+		if so := req.Sources; so != nil {
+			c := &sess.Cfg.Sources
+			set := func(dst *bool, v *bool) {
+				if v != nil {
+					*dst = *v
+				}
+			}
+			set(&c.Bing, so.Bing)
+			set(&c.APOD, so.APOD)
+			set(&c.Wikimedia, so.Wikimedia)
+			set(&c.Reddit, so.Reddit)
+			set(&c.Unsplash, so.Unsplash)
+			if so.Subreddits != nil {
+				c.Subreddits = strings.ReplaceAll(strings.TrimSpace(*so.Subreddits), " ", "")
+			}
+			if so.Query != nil {
+				c.Query = strings.TrimSpace(*so.Query)
+			}
+			if so.MinWidth != nil {
+				if *so.MinWidth < 640 || *so.MinWidth > 20000 {
+					return nil, fmt.Errorf("minimum width is 640 to 20000 px")
+				}
+				c.MinWidth = *so.MinWidth
+				c.Skipped = nil // re-check earlier rejects against the new limit
+			}
+		}
 		if req.Hotkeys != nil {
 			for action, combo := range *req.Hotkeys {
 				if !validAction(action) {
-					return nil, fmt.Errorf("unknown hotkey action %q (next, previous, pause, open)", action)
+					return nil, fmt.Errorf("unknown hotkey action %q (next, previous, pause, open, favorite, ban)", action)
 				}
 				if combo != "" {
 					if _, _, err := tray.ParseHotkey(combo); err != nil {
@@ -496,6 +614,12 @@ func (s *Server) setConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil && req.WallhavenSync != nil && *req.WallhavenSync {
 		go s.syncWallhaven()
+	}
+	if err == nil && req.Sources != nil {
+		go s.syncSources()
+	}
+	if err == nil && switchSchedule {
+		go s.slideStep(false) // show the Day or Night folder right away
 	}
 	writeJSON(w, v, err)
 }
@@ -561,4 +685,11 @@ func extensionPath() string {
 		return ""
 	}
 	return p
+}
+
+func minWidth(c *config.Config) int {
+	if c.Sources.MinWidth <= 0 {
+		return 2560
+	}
+	return c.Sources.MinWidth
 }

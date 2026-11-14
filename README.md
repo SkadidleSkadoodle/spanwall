@@ -24,10 +24,22 @@ and a Claude Desktop extension).
   (a closer laptop looks bigger), tilt and perspective, and the bend of
   curved screens, and warps each slice to match. Later, a photo of a normal
   wallpaper is enough to re-align a monitor that moved.
-- **Move and zoom the image** behind the monitors to choose what shows where
-  (drag, corner handles, scroll, arrow keys).
+- **Move, zoom and flip the image** behind the monitors to choose what shows
+  where (drag, corner handles, scroll, arrow keys, H and V to flip).
+- **Smart framing:** images you haven't framed yourself are placed
+  automatically so their subject lands on screens rather than bezels or the
+  gap behind a laptop. Dark backgrounds (space, night sky, black bars) never
+  pull the frame.
 - **Slideshow** from a folder (shuffle without repeats, or by name), with
-  previous/next hotkeys and a tray icon.
+  previous/next hotkeys and a tray icon. Favourite images come up more often;
+  banned ones never do.
+- **Library folders:** tabs for all wallpapers, favourites and your own
+  folders; a wallpaper can be in as many folders as you like.
+- **Day and night:** a toggle that rotates through the Day folder by day and
+  the Night folder at night, switching at sunrise and sunset or with
+  Windows' light and dark mode.
+- **Windows look:** optionally set the accent colour from each wallpaper and
+  put the main monitor's part on the lock screen.
 - **Span groups:** span some monitors together and give the others their own
   image.
 - **Virtual desktops:** the same wallpaper everywhere, one per desktop, or a
@@ -35,8 +47,12 @@ and a Claude Desktop extension).
 - **Wallhaven:** search wallhaven.cc (safe for work) with your layout's ratio
   and minimum size preselected, download at full resolution, and auto-download
   new wallpapers from one of your collections.
-- **Layouts per setup:** plug monitors in or out and the matching layout is
-  applied automatically.
+- **More sources:** Bing's image of the day (4K), Wikimedia Commons' and
+  NASA's pictures of the day, top posts from subreddits, and Unsplash (with
+  your own free access key). Only landscape images wide enough are kept.
+- **Dock and undock:** each set of monitors remembers its layout and
+  wallpaper, so plugging monitors in or out brings that setup back as you
+  left it.
 - **Claude Desktop extension:** ask Claude to preview, set, align (send it the
   photo), find or rotate wallpapers.
 - **Superpaper compatible:** the span geometry matches Superpaper exactly
@@ -72,7 +88,8 @@ monitor up in the layout moves the image on it down.
 ## Tray and hotkeys
 
 Left click the tray icon to open the editor; right click for next, previous,
-slideshow, identify and quit. Default hotkeys (change them in Settings):
+slideshow, identify, favourite, never show again and quit. Default hotkeys
+(change them, or add ones for favourite and ban, in Settings):
 
 | Hotkey | Action |
 |---|---|
@@ -107,7 +124,8 @@ Everything stays on your PC. The background app listens on 127.0.0.1 only and
 rejects requests from other web pages. Settings live in
 `%USERPROFILE%\.spanwall`; a Wallhaven API key, if you add one, is stored
 there in its own file, sent only to wallhaven.cc as a header, and never shown
-again. Photos you calibrate with are read locally and kept in
+again; NASA and Unsplash keys are kept the same way. The extra sources are
+only contacted when you turn them on. Photos you calibrate with are read locally and kept in
 `.spanwall\inbox` (delete them any time).
 
 ## Build from source

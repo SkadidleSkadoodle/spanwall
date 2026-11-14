@@ -59,7 +59,14 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .guide { stroke: var(--accent2); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
 .gridline { stroke: #1b2029; stroke-width: 1; vector-effect: non-scaling-stroke; }
 /* library */
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 18px; overflow: auto; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 18px; overflow-y: auto; flex: 1 1 0; min-height: 0; align-content: start; grid-auto-rows: max-content; }
+/* Library: justified rows. Each card's width follows its image's real
+   aspect ratio (--ar) and every card in a row has the same height, so about
+   four 16:9 images fit per row and wide ones take more room. */
+#libGrid { display: flex; flex-wrap: wrap; align-content: flex-start; container-type: inline-size; }
+#libGrid .card { --rowh: calc((100cqw - 42px) / 7.11); flex: var(--ar) 1 calc(var(--rowh) * var(--ar)); min-width: 150px; max-width: 100%; }
+#libGrid .card img { aspect-ratio: var(--ar); object-fit: cover; }
+#libGrid .fill { flex: 1000 1 0; height: 0; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .card img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; cursor: pointer; }
 .card .meta { padding: 8px 10px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 8px; }
@@ -117,3 +124,26 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 
 .welcome { left: 16px; right: auto; }
 .welcome li { line-height: 1.6; }
+#libGrid .card .meta span { white-space: nowrap; }
+#libGrid .card.banned { opacity: .45; }
+#libGrid .card .rate { display: flex; gap: 4px; padding: 0 10px 8px; align-items: center; }
+#libGrid .card .rate button { padding: 2px 8px; font-size: 12.5px; }
+#libGrid .card .rate button.on { background: var(--accent2); border-color: var(--accent2); color: #06161a; }
+#libGrid .card .rate .fbtn { margin-left: auto; }
+.libtabs { display: flex; gap: 4px; padding: 8px 18px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; align-items: flex-end; }
+.libtabs button { background: none; border: 0; border-radius: 6px 6px 0 0; padding: 6px 12px; color: var(--muted); }
+.libtabs button:hover { color: var(--ink); background: var(--panel2); }
+.libtabs button.active { color: var(--ink); background: var(--panel2); box-shadow: inset 0 -2px 0 var(--accent); }
+.libtabs button .n { font-size: 11px; color: var(--muted); margin-left: 4px; }
+.libtabs .new { color: var(--accent); }
+.libtabs .tools { margin-left: auto; display: flex; gap: 6px; padding-bottom: 6px; }
+.libtabs .tools button { border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; font-size: 12.5px; }
+.foldermenu { position: fixed; z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px; min-width: 180px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.foldermenu label { display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+.foldermenu label:hover { background: var(--panel2); }
+.foldermenu .add { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
+.foldermenu .add button { width: 100%; text-align: left; background: none; border: 0; color: var(--accent); padding: 5px 8px; }
+.plist { display: grid; grid-template-columns: max-content 1fr max-content; gap: 6px 14px; align-items: center; margin: 8px 0; }
+.plist .cur { color: var(--ok); font-size: 12px; }
+#libGrid .card .acts button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel > .check { display: flex; margin: 6px 0; }

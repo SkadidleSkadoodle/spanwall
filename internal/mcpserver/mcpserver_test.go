@@ -34,9 +34,9 @@ func TestToolsRegister(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	want := []string{"sw_align_from_photo", "sw_apply_alignment", "sw_calibrate", "sw_config", "sw_desktops", "sw_framing",
+	want := []string{"sw_align_from_photo", "sw_apply_alignment", "sw_calibrate", "sw_config", "sw_desktops", "sw_folders", "sw_framing",
 		"sw_get_layout", "sw_identify", "sw_layout_presets", "sw_list_displays", "sw_list_wallpapers", "sw_move_display", "sw_photo_pattern",
-		"sw_preview", "sw_project_info", "sw_set_wallpaper", "sw_slideshow", "sw_start", "sw_status", "sw_stop", "sw_wallhaven_collections", "sw_wallhaven_download", "sw_wallhaven_search", "sw_wallhaven_sync"}
+		"sw_preview", "sw_project_info", "sw_rate", "sw_set_wallpaper", "sw_slideshow", "sw_sources_sync", "sw_start", "sw_status", "sw_stop", "sw_wallhaven_collections", "sw_wallhaven_download", "sw_wallhaven_search", "sw_wallhaven_sync"}
 	if len(names) != len(want) {
 		t.Fatalf("tools = %v", names)
 	}
