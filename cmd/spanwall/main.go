@@ -19,7 +19,7 @@ import (
 )
 
 // version is set by release builds (-ldflags "-X main.version=1.0.0").
-var version = "1.0.0"
+var version = "1.1.0"
 
 const usage = `spanwall %s
 
