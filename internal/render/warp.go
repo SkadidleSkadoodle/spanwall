@@ -90,7 +90,11 @@ func SlicesFramed(src image.Image, ds []geometry.Display, crops []geometry.Rect,
 		if fr.Moved() {
 			draw.Draw(dst, dst.Rect, image.Black, image.Point{}, draw.Src)
 		}
-		if warps[i] == nil {
+		w := warps[i]
+		if w == nil && fr.Rotate != 0 {
+			w = cropMap{crops[i], ds[i]} // rotation needs the per-pixel path
+		}
+		if w == nil {
 			m := f.SourceToSlice(crops[i], ds[i], b.Min)
 			parallelBands(dst, func(sub *image.RGBA) { Lanczos3.Transform(sub, m, src, b, xdraw.Src, nil) })
 		} else {
@@ -101,30 +105,45 @@ func SlicesFramed(src image.Image, ds []geometry.Display, crops []geometry.Rect,
 					draw.Draw(rgba, b, src, b.Min, draw.Src)
 				}
 			}
-			warpInto(dst, rgba, f, warps[i])
+			warpInto(dst, rgba, f, w, fr.Rotate)
 		}
 		out[i] = dst
 	}
 	return out, nil
 }
 
+// cropMap maps a slice's pixels to the canvas through its rectangular crop
+// (what Slices does with an affine map), for the per-pixel path.
+type cropMap struct {
+	c geometry.Rect
+	d geometry.Display
+}
+
+func (m cropMap) Map(x, y float64) (float64, float64) {
+	return float64(m.c.L) + x*float64(m.c.W())/float64(m.d.ResW), float64(m.c.T) + y*float64(m.c.H())/float64(m.d.ResH)
+}
+
 // Frame zooms and moves the image on the canvas. Zoom is relative to the
 // default fill (0 or 1 = fill); DX, DY move the image's centre by that
 // fraction of its displayed width and height. FlipX, FlipY mirror the image
-// in place (left-right, top-bottom) before it is placed.
+// in place (left-right, top-bottom) before it is placed; Rotate then turns
+// it clockwise about its centre, in degrees.
 type Frame struct {
-	Zoom  float64 `json:"zoom"`
-	DX    float64 `json:"dx"`
-	DY    float64 `json:"dy"`
-	FlipX bool    `json:"flipX,omitempty"`
-	FlipY bool    `json:"flipY,omitempty"`
+	Zoom   float64 `json:"zoom"`
+	DX     float64 `json:"dx"`
+	DY     float64 `json:"dy"`
+	FlipX  bool    `json:"flipX,omitempty"`
+	FlipY  bool    `json:"flipY,omitempty"`
+	Rotate float64 `json:"rotate,omitempty"`
 }
 
 // Identity reports whether fr leaves the default fill unchanged.
 func (fr Frame) Identity() bool { return !fr.Moved() && !fr.FlipX && !fr.FlipY }
 
 // Moved reports whether fr zooms or moves the image (flips aside).
-func (fr Frame) Moved() bool { return !((fr.Zoom == 0 || fr.Zoom == 1) && fr.DX == 0 && fr.DY == 0) }
+func (fr Frame) Moved() bool {
+	return !((fr.Zoom == 0 || fr.Zoom == 1) && fr.DX == 0 && fr.DY == 0 && fr.Rotate == 0)
+}
 
 // Flip returns a mirrored copy of src (bounds kept).
 func Flip(src image.Image, fx, fy bool) *image.RGBA {
@@ -201,11 +220,19 @@ func parallelBands(dst *image.RGBA, fn func(*image.RGBA)) {
 
 // warpInto fills dst: slice pixel -> canvas (w) -> source (fill), with
 // bilinear samples, supersampled where the source is denser than the slice.
-func warpInto(dst, src *image.RGBA, f Fill, w Mapper) {
+// rotate (degrees clockwise) turns the image about its centre.
+func warpInto(dst, src *image.RGBA, f Fill, w Mapper, rotate float64) {
 	b := src.Rect
+	hw, hh := float64(b.Dx())/2, float64(b.Dy())/2
+	sin, cos := math.Sincos(rotate * math.Pi / 180)
 	toSrc := func(x, y float64) (float64, float64) {
 		cx, cy := w.Map(x, y)
-		return (cx+f.OffX)/f.SX + float64(b.Min.X), (cy+f.OffY)/f.SY + float64(b.Min.Y)
+		qx, qy := (cx+f.OffX)/f.SX, (cy+f.OffY)/f.SY
+		if rotate != 0 { // undo the clockwise turn about the centre
+			dx, dy := qx-hw, qy-hh
+			qx, qy = hw+cos*dx+sin*dy, hh-sin*dx+cos*dy
+		}
+		return qx + float64(b.Min.X), qy + float64(b.Min.Y)
 	}
 	// Source pixels per slice pixel at the centre sets the supersampling.
 	W, H := float64(dst.Rect.Dx()), float64(dst.Rect.Dy())

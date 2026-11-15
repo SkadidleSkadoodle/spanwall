@@ -112,8 +112,9 @@ function isDirty() {
 }
 
 // The editable part of a frame, and whether two of them differ.
-const frameVals = (f) => ({ zoom: f.zoom, dx: f.dx, dy: f.dy, flipX: !!f.flipX, flipY: !!f.flipY });
-const frameDiff = (f, g) => Math.abs(f.zoom - g.zoom) > 1e-4 || Math.abs(f.dx - g.dx) > 1e-4 || Math.abs(f.dy - g.dy) > 1e-4 || !!f.flipX !== !!g.flipX || !!f.flipY !== !!g.flipY;
+const frameVals = (f) => ({ zoom: f.zoom, dx: f.dx, dy: f.dy, flipX: !!f.flipX, flipY: !!f.flipY, rotate: f.rotate || 0 });
+const frameDiff = (f, g) => Math.abs(f.zoom - g.zoom) > 1e-4 || Math.abs(f.dx - g.dx) > 1e-4 || Math.abs(f.dy - g.dy) > 1e-4 || !!f.flipX !== !!g.flipX || !!f.flipY !== !!g.flipY ||
+  Math.abs((f.rotate || 0) - (g.rotate || 0)) > 1e-3;
 
 function frameDirty() {
   return Object.keys(S.frames).some((k) => S.framesSaved[k] && frameDiff(S.frames[k], S.framesSaved[k]));
@@ -151,9 +152,23 @@ async function loadFrame(v) {
   try {
     const q = "image=" + encodeURIComponent(v.img) + (v.ids ? "&group=" + encodeURIComponent(v.ids.join(",")) : "");
     const r = await api("/api/framing?" + q);
-    S.frames[v.key] = { img: v.img, ids: v.ids, w: r.width, h: r.height, zoom: r.frame.zoom || 1, dx: r.frame.dx || 0, dy: r.frame.dy || 0, flipX: !!r.frame.flipX, flipY: !!r.frame.flipY };
+    S.frames[v.key] = { img: v.img, ids: v.ids, w: r.width, h: r.height, zoom: r.frame.zoom || 1, dx: r.frame.dx || 0, dy: r.frame.dy || 0, flipX: !!r.frame.flipX, flipY: !!r.frame.flipY, rotate: r.frame.rotate || 0 };
     S.framesSaved[v.key] = frameVals(S.frames[v.key]);
   } catch (e) { /* drawn with the default fill */ }
+  render();
+}
+
+// turnPt turns (x, y) clockwise by deg degrees about (cx, cy).
+function turnPt(x, y, cx, cy, deg) {
+  if (!deg) return [x, y];
+  const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), dx = x - cx, dy = y - cy;
+  return [cx + c * dx - s * dy, cy + s * dx + c * dy];
+}
+const normDeg = (d) => { d = ((d % 360) + 360) % 360; return d > 180 ? d - 360 : d; };
+function setRotate(deg) {
+  act();
+  if (!S.frame) return;
+  S.frame.rotate = Math.round(normDeg(deg) * 10) / 10;
   render();
 }
 
@@ -208,7 +223,7 @@ function render() {
   out += `<clipPath id="mons">`;
   for (const d of S.displays) {
     const p = S.cur[d.id]; if (!p) continue;
-    const q = curQuad(p);
+    const q = viewQuad(p);
     out += q ? `<polygon points="${quadPts(q)}"/>` : `<rect x="${p.xMM}" y="${p.yMM}" width="${W(d)}" height="${Hh(d)}"/>`;
   }
   out += `</clipPath></defs>`;
@@ -222,7 +237,7 @@ function render() {
       for (const d of S.displays) {
         const p = S.cur[d.id];
         if (!p || (v.ids && !v.ids.includes(d.id))) continue;
-        const q = curQuad(p);
+        const q = viewQuad(p);
         out += q ? `<polygon points="${quadPts(q)}"/>` : `<rect x="${p.xMM}" y="${p.yMM}" width="${W(d)}" height="${Hh(d)}"/>`;
       }
       out += `</clipPath>`;
@@ -235,18 +250,37 @@ function render() {
       }
       const r = imgRect(v.b, f);
       const active = v.key === S.activeKey;
-      // Flips mirror the image in place, around its own centre.
-      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-      const tf = f.flipX || f.flipY ? ` transform="translate(${cx} ${cy}) scale(${f.flipX ? -1 : 1} ${f.flipY ? -1 : 1}) translate(${-cx} ${-cy})"` : "";
+      // Flips mirror the image in place, then it turns about its own centre.
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rot = f.rotate || 0;
+      const tf = f.flipX || f.flipY || rot ? ` transform="translate(${cx} ${cy}) rotate(${rot}) scale(${f.flipX ? -1 : 1} ${f.flipY ? -1 : 1}) translate(${-cx} ${-cy})"` : "";
       const a = `href="${href}" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" preserveAspectRatio="none"${tf}`;
       out += `<image ${a} opacity="${S.moveImg && active ? 0.4 : 0.16}"/>`;
       out += `<g clip-path="url(#mv${vi})"><image ${a}/></g>`;
       if (S.moveImg && active) {
-        out += `<rect class="imgframe" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`;
-        // Corner handles: drag to resize around the opposite corner.
+        // Outline and handles turn with the image.
+        const turn = (x, y) => turnPt(x, y, cx, cy, rot);
+        const corners = [["nw", r.x, r.y], ["ne", r.x + r.w, r.y], ["se", r.x + r.w, r.y + r.h], ["sw", r.x, r.y + r.h]].map(([c, x, y]) => [c, ...turn(x, y)]);
+        out += `<polygon class="imgframe" points="${corners.map((c) => c[1] + "," + c[2]).join(" ")}"/>`;
+        // Corner handles: drag to resize.
         const hs = S.vb.w / 70;
-        [["nw", r.x, r.y], ["ne", r.x + r.w, r.y], ["se", r.x + r.w, r.y + r.h], ["sw", r.x, r.y + r.h]].forEach(([c, x, y]) => {
+        corners.forEach(([c, x, y]) => {
           out += `<rect class="imghandle ${c}" data-corner="${c}" x="${x - hs / 2}" y="${y - hs / 2}" width="${hs}" height="${hs}"/>`;
+        });
+        // Curved arrows just outside the left and right edges: drag to rotate.
+        const R = hs * 1.9, sw = R * 0.14, hs70 = Math.sin(70 * Math.PI / 180), hc70 = Math.cos(70 * Math.PI / 180);
+        [[-1, r.x - R * 1.5], [1, r.x + r.w + R * 1.5]].forEach(([side, x]) => {
+          const [hx, hy] = turn(x, cy);
+          // A 140 degree arc bulging outwards, with an arrowhead at each end
+          // pointing along the arc.
+          const x0 = side * R * hc70, y0 = R * hs70;
+          const head = (px, py, dx, dy) => { const L = R * 0.42, nx = -dy, ny = dx;
+            return `M ${px + nx * L * 0.6 - dx * L} ${py + ny * L * 0.6 - dy * L} L ${px} ${py} L ${px - nx * L * 0.6 - dx * L} ${py - ny * L * 0.6 - dy * L}`; };
+          const top = head(x0, -y0, -hs70 * side, -hc70);
+          const bot = head(x0, y0, -hs70 * side, hc70);
+          out += `<g class="rotarrow" data-rot="1" transform="translate(${hx} ${hy}) rotate(${rot})">` +
+            `<circle r="${R * 1.25}" class="rothit"/>` +
+            `<path d="M ${x0} ${-y0} A ${R} ${R} 0 0 ${side > 0 ? 1 : 0} ${x0} ${y0} ${top} ${bot}" stroke-width="${sw}"/>` +
+            `<title>Drag to rotate (Shift: 15° steps)</title></g>`;
         });
       }
     });
@@ -257,7 +291,7 @@ function render() {
     if (!p) return;
     const cls = "mon" + (S.sel === d.id ? " selected" : "") + (S.dragging && S.dragging.id === d.id ? " dragging" : "");
     out += `<g class="${cls}" data-id="${esc(d.id)}" transform="translate(${p.xMM} ${p.yMM})">`;
-    const q = curQuad(p);
+    const q = viewQuad(p);
     if (q) {
       // Photo-measured shape inside its bounding box (which is what you drag).
       out += `<rect class="frame bbox" width="${W(d)}" height="${Hh(d)}" rx="3"/>`;
@@ -311,13 +345,28 @@ function snap(id, x, y, noSnap) {
 function initCanvas() {
   const svg = $("#canvas");
   svg.addEventListener("pointerdown", (e) => {
-    if (S.moveImg && !(e.target.dataset && e.target.dataset.corner)) {
+    if (S.moveImg && !(e.target.dataset && e.target.dataset.corner) && !e.target.closest("[data-rot]")) {
       // Pick the group under the pointer (span groups).
       const p0 = svgPoint(e), vs = views();
       const v = vs.find((x) => p0.x >= x.b.x0 && p0.x <= x.b.x1 && p0.y >= x.b.y0 && p0.y <= x.b.y1);
       if (v && v.key !== S.activeKey) { S.activeKey = v.key; }
     }
     act();
+    if (S.moveImg && S.frame && e.target.closest("[data-rot]")) {
+      const r = imgRect(activeB()), p = svgPoint(e);
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      S.imgRotate = { cx, cy, a0: Math.atan2(p.y - cy, p.x - cx), rot0: S.frame.rotate || 0 };
+      svg.setPointerCapture(e.pointerId);
+      return;
+    }
+    if (S.moveImg && S.frame && e.target.dataset && e.target.dataset.corner && S.frame.rotate) {
+      // Turned image: resize about its centre.
+      const r = imgRect(activeB()), p = svgPoint(e);
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      S.imgResize = { centre: true, cx, cy, d0: Math.hypot(p.x - cx, p.y - cy), z0: S.frame.zoom, r };
+      svg.setPointerCapture(e.pointerId);
+      return;
+    }
     if (S.moveImg && S.frame && e.target.dataset && e.target.dataset.corner) {
       const r = imgRect(activeB()), c = e.target.dataset.corner;
       // The opposite corner stays where it is.
@@ -342,6 +391,23 @@ function initCanvas() {
     render();
   });
   svg.addEventListener("pointermove", (e) => {
+    if (S.imgRotate) {
+      const d = S.imgRotate, p = svgPoint(e);
+      let deg = d.rot0 + (Math.atan2(p.y - d.cy, p.x - d.cx) - d.a0) * 180 / Math.PI;
+      if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+      setRotate(deg);
+      return;
+    }
+    if (S.imgResize && S.imgResize.centre) {
+      const d = S.imgResize, p = svgPoint(e), b = activeB();
+      const z = Math.min(10, Math.max(0.25, d.z0 * Math.hypot(p.x - d.cx, p.y - d.cy) / Math.max(d.d0, 1e-6)));
+      const w = S.frame.w * d.r.base * z, h = S.frame.h * d.r.base * z;
+      S.frame.zoom = z;
+      S.frame.dx = (d.cx - w / 2 - (b.x0 + b.w / 2 - w / 2)) / w;
+      S.frame.dy = (d.cy - h / 2 - (b.y0 + b.h / 2 - h / 2)) / h;
+      render();
+      return;
+    }
     if (S.imgResize) {
       const d = S.imgResize, p = svgPoint(e), b = activeB();
       // Scale by how far the pointer is along the anchor-to-corner diagonal.
@@ -372,7 +438,7 @@ function initCanvas() {
     calibrateSoon();
   });
   const end = () => {
-    if (S.imgDrag || S.imgResize) { S.imgDrag = null; S.imgResize = null; render(); return; }
+    if (S.imgDrag || S.imgResize || S.imgRotate) { S.imgDrag = null; S.imgResize = null; S.imgRotate = null; render(); return; }
     if (!S.dragging) return;
     S.dragging = null; S.guides = [];
     fit(); render(); calibrateSoon();
@@ -408,6 +474,12 @@ function initCanvas() {
         S.frame.dx += d[0] / r.w;
         S.frame.dy += d[1] / r.h;
         render();
+        return;
+      }
+      if ((e.key === "[" || e.key === "]" || e.key === "{" || e.key === "}") && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const step = e.shiftKey ? 15 : e.altKey ? 0.1 : 1;
+        setRotate((S.frame.rotate || 0) + (e.key === "]" || e.key === "}" ? step : -step));
         return;
       }
       if ((e.key === "h" || e.key === "v") && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -451,11 +523,43 @@ function nudge(dx, dy) {
 }
 
 // ---- side panel -----------------------------------------------------------------
+// The smallest image that covers the whole layout with no monitor upscaled:
+// the layout's size in mm at the highest monitor density.
+function neededSize() {
+  const b = bbox();
+  if (!isFinite(b.w) || b.w <= 0) return null;
+  let ppi = 0, who = null;
+  for (const d of S.displays) {
+    if (!S.cur[d.id]) continue;
+    const v = d.resW / (W(d) / 25.4);
+    if (v > ppi) { ppi = v; who = d; }
+  }
+  if (!who) return null;
+  return { w: Math.ceil(b.w / 25.4 * ppi), h: Math.ceil(b.h / 25.4 * ppi), ratio: b.w / b.h, ppi, who, mm: [Math.round(b.w), Math.round(b.h)] };
+}
+
+function needHTML() {
+  const n = neededSize();
+  if (!n) return "";
+  let cur = "";
+  const v = act(), f = v && S.frames[v.key];
+  if (f && f.w && f.h && !v.ids) {
+    const k = Math.max(n.w / (f.w * (f.zoom || 1)), n.h / (f.h * (f.zoom || 1)));
+    cur = k <= 1.001 ? `<div class="ok">Current wallpaper ${f.w} × ${f.h}: sharp on every monitor</div>`
+      : `<div class="warn">Current wallpaper ${f.w} × ${f.h}: ${n.who.name} is upscaled ${k.toFixed(2)}×</div>`;
+  }
+  return `<div class="need"><label>Wallpaper size to cover all monitors</label>
+    <div class="big">${n.w} × ${n.h}</div>
+    <div class="muted">ratio ${n.ratio.toFixed(2)} : 1 · layout ${n.mm[0]} × ${n.mm[1]} mm · set by ${esc(n.who.name)} (${n.ppi.toFixed(0)} PPI)</div>${cur}
+    <div class="note">Anything at least this big covers every monitor with no upscaling. A different shape still works: the extra is cropped.</div></div>`;
+}
+
 function renderSide() {
   const side = $("#side");
   const d = S.sel && disp(S.sel);
-  if (!d) { side.innerHTML = `<div class="empty">Select a monitor to edit its position.<br><br>Moving a monitor <b>up</b> here moves the image on it <b>down</b>.</div>`; return; }
+  if (!d) { side.innerHTML = needHTML() + `<div class="empty">Select a monitor to edit its position.<br><br>Moving a monitor <b>up</b> here moves the image on it <b>down</b>.</div>`; return; }
   if (side.dataset.for === d.id && side.contains(document.activeElement) && document.activeElement.tagName === "INPUT") {
+    if ($("#needBox")) $("#needBox").innerHTML = needHTML();
     const p = S.cur[d.id];
     if (document.activeElement.id !== "sx") $("#sx").value = p.xMM;
     if (document.activeElement.id !== "sy") $("#sy").value = p.yMM;
@@ -480,7 +584,8 @@ function renderSide() {
     <label>Measured visible size (mm), if the detected one is off</label>
     <div class="pair"><input id="sw" type="number" step="0.5" value="${r1(d.widthMM)}"><input id="sh" type="number" step="0.5" value="${r1(d.heightMM)}"></div>
     <div class="row"><button id="btnSize">Save size</button><button id="btnSizeReset">Use detected</button></div>
-    <div class="note">The detected size comes from the monitor's EDID and is usually right to about 1 mm. Measure only the lit area, not the bezel.</div>`;
+    <div class="note">The detected size comes from the monitor's EDID and is usually right to about 1 mm. Measure only the lit area, not the bezel.</div>
+    <div id="needBox">${needHTML()}</div>`;
   const setXY = () => {
     const x = parseFloat($("#sx").value), y = parseFloat($("#sy").value);
     const k = parseFloat($("#ss").value);
@@ -539,6 +644,9 @@ function carried(p, pts) {
   return q;
 }
 const curQuad = (p) => (p && p.quad ? carried(p, p.quad) : null);
+// The shape the editor draws: the photo-measured (angled) one, or with the
+// perspective view off, the plain upright rectangle. Rendering is unaffected.
+const viewQuad = (p) => ($("#chkPersp").checked ? curQuad(p) : null);
 const quadPts = (q) => [0, 2, 4, 6].map((i) => `${q[i]},${q[i + 1]}`).join(" ");
 
 // ---- toolbar ------------------------------------------------------------------------
@@ -575,10 +683,10 @@ function initToolbar() {
     S.moveImg = !S.moveImg;
     $("#btnMoveImg").classList.toggle("on", S.moveImg);
     $("#canvas").classList.toggle("moving-img", S.moveImg);
-    if (S.moveImg) toast("Drag or use the arrow keys to move the wallpaper; drag a corner, scroll or +/- to resize; H/V to flip. Save & apply to use it.");
+    if (S.moveImg) toast("Drag or use the arrow keys to move the wallpaper; drag a corner, scroll or +/- to resize; drag a curved arrow or press [ ] to rotate (H/V mirror). Save & apply to use it.");
     render();
   });
-  $("#btnResetImg").addEventListener("click", () => { act(); if (S.frame) { Object.assign(S.frame, { zoom: 1, dx: 0, dy: 0, flipX: false, flipY: false }); render(); } });
+  $("#btnResetImg").addEventListener("click", () => { act(); if (S.frame) { Object.assign(S.frame, { zoom: 1, dx: 0, dy: 0, flipX: false, flipY: false, rotate: 0 }); render(); } });
   $("#btnAutoImg").addEventListener("click", async () => {
     const v = act();
     if (!v) { toast("Show a wallpaper first (Library: Show in editor, or apply one)", true); return; }
@@ -589,8 +697,9 @@ function initToolbar() {
       toast(S.status && S.status.smartFrame ? "Smart framing places this image again. Save & apply to use it." : "Back to the plain fill (smart framing is off in Settings)");
     } catch (e) { fail(e); }
   });
-  $("#btnFlipX").addEventListener("click", () => flipImg("flipX"));
-  $("#btnFlipY").addEventListener("click", () => flipImg("flipY"));
+  $("#btnRotL").addEventListener("click", () => { act(); if (S.frame) setRotate((S.frame.rotate || 0) - 90); else toast("Show a wallpaper first", true); });
+  $("#btnRotR").addEventListener("click", () => { act(); if (S.frame) setRotate((S.frame.rotate || 0) + 90); else toast("Show a wallpaper first", true); });
+  $("#inpRot").addEventListener("change", (e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setRotate(v); });
   $("#btnSave").addEventListener("click", () => save().then(() => toast("Layout saved")).catch(fail));
   $("#btnApply").addEventListener("click", async () => {
     try {
@@ -620,8 +729,7 @@ function flipImg(axis) {
 }
 function updateFlipButtons() {
   act();
-  $("#btnFlipX").classList.toggle("on", !!(S.frame && S.frame.flipX));
-  $("#btnFlipY").classList.toggle("on", !!(S.frame && S.frame.flipY));
+  if (document.activeElement !== $("#inpRot")) $("#inpRot").value = S.frame ? (S.frame.rotate || 0) : 0;
 }
 
 async function save() {
@@ -731,6 +839,7 @@ async function loadLibrary() {
     S.folders = r.folders || [];
     $("#libDir").textContent = r.dir;
     renderLibrary();
+    showSlideshow();
   } catch (e) { fail(e); }
 }
 
@@ -797,22 +906,45 @@ async function newFolder(addIndex) {
   } catch (e) { fail(e); return null; }
 }
 
+// fmtMinutes writes a slideshow interval the short way: 45 min, 2 hours,
+// 1 day 6 hours, 1 hour 30 min.
+function fmtMinutes(m) {
+  const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  const part = (n, one, many) => (n ? `${n} ${n === 1 ? one : many}` : "");
+  return [part(d, "day", "days"), part(h, "hour", "hours"), part(mm, "min", "min")].filter(Boolean).join(" ") || "0 min";
+}
+
+const EVERY = [[1, "1 min"], [5, "5 min"], [10, "10 min"], [15, "15 min"], [30, "30 min"], [60, "1 hour"], [180, "3 hours"], [360, "6 hours"], [720, "12 hours"], [1440, "1 day"]];
+
 function showSlideshow() {
   const ss = S.status && S.status.slideshow;
   if (!ss) return;
+  const sc = S.status.schedule || {};
   const b = $("#btnSlideToggle");
   b.classList.toggle("on", ss.enabled);
-  b.textContent = ss.enabled ? "Pause" : "Start";
-  if (document.activeElement !== $("#slideEvery")) $("#slideEvery").value = ss.intervalMin;
-  $("#slideOrder").value = ss.order;
-  $("#slideMode").value = ss.mode;
-  const next = ss.enabled && ss.next ? " · next at " + new Date(ss.next).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-  $("#slideInfo").textContent = (ss.current && ss.current.length ? "now: " + ss.current.join(", ") : "") + next;
+  b.textContent = ss.enabled ? "❚❚ Pause" : "▶ Play";
+  // Album: all, favourites, then every folder (new ones appear here).
+  const opts = [["", "All wallpapers"], ["fav", "Favourites"]].concat(S.folders.map((f) => [f.name, f.name]));
+  if (ss.source && !opts.some((o) => o[0] === ss.source)) opts.push([ss.source, ss.source]);
+  const html = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+  if ($("#slideSource").dataset.html !== html) { $("#slideSource").innerHTML = html; $("#slideSource").dataset.html = html; }
+  $("#slideSource").value = ss.source || "";
+  $("#slideSource").disabled = !!sc.enabled;
+  $("#slideSource").title = sc.enabled ? "Day/night is on, so the Day and Night folders are playing" : "Which album the slideshow plays";
+  const ev = EVERY.some(([m]) => m === ss.intervalMin) ? EVERY : EVERY.concat([[ss.intervalMin, fmtMinutes(ss.intervalMin)]]).sort((a, c) => a[0] - c[0]);
+  const eh = ev.map(([m, l]) => `<option value="${m}">${l}</option>`).join("") + `<option value="custom">Custom…</option>`;
+  if ($("#slideEvery").dataset.html !== eh) { $("#slideEvery").innerHTML = eh; $("#slideEvery").dataset.html = eh; }
+  $("#slideEvery").value = ss.intervalMin;
+  $("#btnSlideOrder").classList.toggle("on", ss.order !== "name");
+  $$("input[name=smode]").forEach((r) => (r.checked = r.value === ss.mode));
+  const next = ss.enabled && ss.next ? " · next " + new Date(ss.next).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const now = ss.current && ss.current.length ? "Now: " + ss.current.join(", ") : "";
+  $("#slideInfo").textContent = now + next;
+  $("#slideInfo").title = now + next;
   $("#btnSlidePrev").disabled = !ss.canGoBack;
-  const sc = S.status.schedule || {};
   $("#btnDayNight").classList.toggle("on", !!sc.enabled);
-  $("#btnDayNight").textContent = sc.enabled ? (sc.period === "night" ? "Night ☾" : "Day ☀") : "Day/night";
-  $("#btnDayNight").title = sc.enabled ? `Showing the ${sc.period === "night" ? "Night" : "Day"} folder; click to turn day/night off` : "Show the Day folder by day and the Night folder at night";
+  $("#btnDayNight").textContent = sc.enabled ? (sc.period === "night" ? "☾ Night" : "☀ Day") : "☀ Day/night";
+  $("#btnDayNight").title = sc.enabled ? `Day/night on: playing the ${sc.period === "night" ? "Night" : "Day"} folder. Click to turn off.` : "Day folder by day, Night folder at night";
 }
 
 function initLibrary() {
@@ -902,9 +1034,41 @@ function initLibrary() {
   $("#btnSlideToggle").addEventListener("click", async () => {
     try { await api("/api/slideshow", { enabled: !S.status.slideshow.enabled }); await loadStatus(); } catch (e) { fail(e); }
   });
-  $("#slideEvery").addEventListener("change", (e) => api("/api/slideshow", { intervalMin: parseInt(e.target.value, 10) }).then(loadStatus).catch(fail));
-  $("#slideOrder").addEventListener("change", (e) => api("/api/slideshow", { order: e.target.value }).then(loadStatus).catch(fail));
-  $("#slideMode").addEventListener("change", (e) => api("/api/slideshow", { mode: e.target.value }).then(loadStatus).catch(fail));
+  const showCustom = (on) => {
+    $("#everyCustom").classList.toggle("hidden", !on);
+    $("#slideEvery").classList.toggle("hidden", on);
+    if (on) {
+      // Start from the current interval in the biggest unit it divides into.
+      const m = (S.status && S.status.slideshow.intervalMin) || 30;
+      const u = m % 1440 === 0 ? 1440 : m % 60 === 0 ? 60 : 1;
+      $("#everyUnit").value = String(u); $("#everyNum").value = m / u;
+      $("#everyNum").focus(); $("#everyNum").select();
+    }
+  };
+  const setCustom = () => {
+    const n = parseFloat($("#everyNum").value), u = parseInt($("#everyUnit").value, 10);
+    const m = Math.round(n * u);
+    if (!isFinite(m) || m < 1 || m > 30 * 1440) { toast("Pick 1 minute to 30 days", true); return; }
+    api("/api/slideshow", { intervalMin: m }).then(async () => { showCustom(false); await loadStatus(); toast("Changes every " + fmtMinutes(m)); }).catch(fail);
+  };
+  $("#slideEvery").addEventListener("change", (e) => {
+    if (e.target.value === "custom") { showCustom(true); return; }
+    api("/api/slideshow", { intervalMin: parseInt(e.target.value, 10) }).then(loadStatus).catch(fail);
+  });
+  $("#everySet").addEventListener("click", setCustom);
+  $("#everyNum").addEventListener("keydown", (e) => { if (e.key === "Enter") setCustom(); if (e.key === "Escape") { showCustom(false); showSlideshow(); } });
+  $("#everyCancel").addEventListener("click", () => { showCustom(false); showSlideshow(); });
+  $("#btnSlideOrder").addEventListener("click", () => {
+    const shuffle = !$("#btnSlideOrder").classList.contains("on");
+    api("/api/slideshow", { order: shuffle ? "shuffle" : "name" }).then(() => { toast(shuffle ? "Shuffle on" : "Shuffle off: playing by file name"); return loadStatus(); }).catch(fail);
+  });
+  $("#btnSlideMore").addEventListener("click", () => $("#slideMenu").classList.toggle("hidden"));
+  document.addEventListener("mousedown", (e) => { if (!e.target.closest(".morewrap")) $("#slideMenu").classList.add("hidden"); });
+  $$("input[name=smode]").forEach((r) => r.addEventListener("change", () => api("/api/slideshow", { mode: r.value }).then(() => { toast("Saved"); return loadStatus(); }).catch(fail)));
+  $("#slideSource").addEventListener("change", (e) => api("/api/slideshow", { source: e.target.value }).then(async () => {
+    await loadStatus();
+    toast(`Slideshow plays ${e.target.value ? e.target.options[e.target.selectedIndex].text : "all wallpapers"}` + (S.status.slideshow.enabled ? "" : ". Press Play to start, or ⏭ for the next one now."));
+  }).catch(fail));
   $("#libGrid").addEventListener("click", async (e) => {
     const rb = e.target.closest("[data-rate]");
     if (rb) {
@@ -1264,6 +1428,8 @@ window.addEventListener("beforeunload", (e) => {
 });
 
 $$("nav button").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+try { $("#chkPersp").checked = localStorage.getItem("spanwall.persp") !== "0"; } catch (e) { /* default on */ }
+$("#chkPersp").addEventListener("change", (e) => { try { localStorage.setItem("spanwall.persp", e.target.checked ? "1" : "0"); } catch (err) { /* ignore */ } render(); });
 initCanvas(); initToolbar(); initWelcome(); initPhoto(); initLibrary(); initWallhaven(); initDesktops(); initSettings(); initSettingsExtra(); initSettingsNew();
 refresh().then(showWelcomeIfNeeded).catch(fail);
 listen();

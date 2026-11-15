@@ -98,3 +98,38 @@ func TestFlip(t *testing.T) {
 		t.Errorf("flip X not applied: left %v right %v", l, r)
 	}
 }
+
+func TestRotateMatchesFlips(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 80, 40))
+	for y := 0; y < 40; y++ {
+		for x := 0; x < 80; x++ {
+			src.SetRGBA(x, y, color.RGBA{uint8(x * 3), uint8(y * 6), 50, 255})
+		}
+	}
+	ds := []geometry.Display{{ID: "a", ResW: 80, ResH: 40, WidthMM: 80, HeightMM: 40}}
+	crops := []geometry.Rect{{R: 80, B: 40}}
+	rot, err := SlicesFramed(src, ds, crops, nil, Frame{Rotate: 180})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flip, _ := SlicesFramed(src, ds, crops, nil, Frame{FlipX: true, FlipY: true})
+	for _, p := range [][2]int{{5, 5}, {40, 20}, {70, 30}} {
+		a, b := rot[0].RGBAAt(p[0], p[1]), flip[0].RGBAAt(p[0], p[1])
+		if absd(a.R, b.R) > 6 || absd(a.G, b.G) > 6 {
+			t.Errorf("at %v: rotate 180 %v, flip both %v", p, a, b)
+		}
+	}
+	// 90 degrees clockwise: the image's top-left corner (dark) moves to the
+	// top-right of what's visible; the canvas corners outside it are black.
+	r90, _ := SlicesFramed(src, ds, crops, nil, Frame{Rotate: 90})
+	if c := r90[0].RGBAAt(1, 1); c.R+c.G+c.B != 0 {
+		t.Errorf("corner should be black after a 90 degree turn, got %v", c)
+	}
+}
+
+func absd(a, b uint8) int {
+	if a > b {
+		return int(a - b)
+	}
+	return int(b - a)
+}

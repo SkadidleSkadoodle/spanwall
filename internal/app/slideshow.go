@@ -138,6 +138,22 @@ func SlideWeights(lib []LibraryImage, c *config.Config, period string) map[strin
 	}
 	folder := map[string]string{"day": "Day", "night": "Night"}[period]
 	if folder == "" {
+		// No day/night: shuffle the chosen album.
+		switch src := c.Slideshow.Source; src {
+		case "":
+		case "fav":
+			for _, im := range lib {
+				if c.Ratings[strings.ToLower(im.Name)] != "fav" {
+					w[im.Name] = 0
+				}
+			}
+		default:
+			for _, im := range lib {
+				if !c.InFolder(src, im.Name) {
+					w[im.Name] = 0
+				}
+			}
+		}
 		return w
 	}
 	timed := map[string]float64{}

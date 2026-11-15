@@ -488,7 +488,7 @@ func (s *Session) SavedFrame(path string, groupIDs []string) (render.Frame, bool
 	if !ok {
 		return render.Frame{}, false
 	}
-	return render.Frame{Zoom: f.Zoom, DX: f.DX, DY: f.DY, FlipX: f.FlipX, FlipY: f.FlipY}, true
+	return render.Frame{Zoom: f.Zoom, DX: f.DX, DY: f.DY, FlipX: f.FlipX, FlipY: f.FlipY, Rotate: f.Rotate}, true
 }
 
 // FrameState describes how an image is framed, for cache keys: the saved
@@ -559,7 +559,14 @@ func (s *Session) SetFrame(path string, groupIDs []string, fr render.Frame) erro
 		if s.Cfg.Framing == nil {
 			s.Cfg.Framing = map[string]config.Frame{}
 		}
-		s.Cfg.Framing[k] = config.Frame{Zoom: fr.Zoom, DX: fr.DX, DY: fr.DY, FlipX: fr.FlipX, FlipY: fr.FlipY}
+		// Keep the angle in (-180, 180].
+		fr.Rotate = math.Mod(fr.Rotate, 360)
+		if fr.Rotate > 180 {
+			fr.Rotate -= 360
+		} else if fr.Rotate <= -180 {
+			fr.Rotate += 360
+		}
+		s.Cfg.Framing[k] = config.Frame{Zoom: fr.Zoom, DX: fr.DX, DY: fr.DY, FlipX: fr.FlipX, FlipY: fr.FlipY, Rotate: fr.Rotate}
 	}
 	return s.Save()
 }

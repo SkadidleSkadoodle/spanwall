@@ -76,3 +76,27 @@ func TestWeightsBanFavouriteAndFolders(t *testing.T) {
 		t.Errorf("empty Day folder: %v", w)
 	}
 }
+
+func TestAlbumSource(t *testing.T) {
+	lib := []LibraryImage{{Name: "a.jpg"}, {Name: "b.jpg"}, {Name: "c.jpg"}}
+	c := config.New()
+	c.CreateFolder("Space")
+	c.SetInFolder("Space", "b.jpg", true)
+	c.SetInFolder("Space", "c.jpg", true)
+	c.Ratings = map[string]string{"c.jpg": "ban", "a.jpg": "fav"}
+	c.Slideshow.Source = "space"
+	w := SlideWeights(lib, c, "")
+	if w["a.jpg"] != 0 || w["b.jpg"] != 1 || w["c.jpg"] != 0 {
+		t.Errorf("album Space: %v", w)
+	}
+	c.Slideshow.Source = "fav"
+	if w := SlideWeights(lib, c, ""); w["a.jpg"] == 0 || w["b.jpg"] != 0 {
+		t.Errorf("favourites: %v", w)
+	}
+	c.RenameFolder("Space", "Planets")
+	c.Slideshow.Source = "Planets"
+	c.DeleteFolder("planets")
+	if c.Slideshow.Source != "" {
+		t.Errorf("deleting the album should fall back to all: %q", c.Slideshow.Source)
+	}
+}

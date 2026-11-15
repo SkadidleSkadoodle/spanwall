@@ -58,7 +58,21 @@ func (s *Server) slideStep(back bool) (any, error) {
 			mode = "span"
 		}
 		count := app.SlideshowCount(mode, len(sess.SpanGroups()), len(sess.Monitors))
-		pick, hist, err := app.PickSlides(names, ss, count, back, rng, app.SlideWeights(lib, sess.Cfg, period(sess.Cfg, time.Now())))
+		weights := app.SlideWeights(lib, sess.Cfg, period(sess.Cfg, time.Now()))
+		if !back {
+			any := false
+			for _, v := range weights {
+				any = any || v > 0
+			}
+			if !any && ss.Source != "" {
+				name := ss.Source
+				if name == "fav" {
+					name = "Favourites"
+				}
+				return nil, fmt.Errorf("the %s album has nothing to show yet", name)
+			}
+		}
+		pick, hist, err := app.PickSlides(names, ss, count, back, rng, weights)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +155,7 @@ func slideshowInfo(sess *app.Session) map[string]any {
 		order = "shuffle"
 	}
 	return map[string]any{"enabled": ss.Enabled, "intervalMin": int(interval(ss) / time.Minute), "order": order,
-		"mode": mode, "next": ss.Next, "current": cur, "canGoBack": len(ss.History) > 1}
+		"mode": mode, "source": ss.Source, "next": ss.Next, "current": cur, "canGoBack": len(ss.History) > 1}
 }
 
 func (s *Server) setSlideshow(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +164,7 @@ func (s *Server) setSlideshow(w http.ResponseWriter, r *http.Request) {
 		IntervalMin *int    `json:"intervalMin"`
 		Order       *string `json:"order"`
 		Mode        *string `json:"mode"`
+		Source      *string `json:"source"` // "" all, "fav", or a folder name
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeJSON(w, nil, err)
@@ -158,8 +173,8 @@ func (s *Server) setSlideshow(w http.ResponseWriter, r *http.Request) {
 	v, err := s.session(func(sess *app.Session) (any, error) {
 		ss := &sess.Cfg.Slideshow
 		if req.IntervalMin != nil {
-			if *req.IntervalMin < 1 || *req.IntervalMin > 7*24*60 {
-				return nil, fmt.Errorf("interval must be 1 minute to 1 week")
+			if *req.IntervalMin < 1 || *req.IntervalMin > 30*24*60 {
+				return nil, fmt.Errorf("interval must be 1 minute to 30 days")
 			}
 			ss.IntervalMin = *req.IntervalMin
 		}
@@ -174,6 +189,22 @@ func (s *Server) setSlideshow(w http.ResponseWriter, r *http.Request) {
 				return nil, fmt.Errorf("mode is span, groups or per-display")
 			}
 			ss.Mode = *req.Mode
+		}
+		if req.Source != nil {
+			src := strings.TrimSpace(*req.Source)
+			switch {
+			case src == "" || strings.EqualFold(src, "all"):
+				src = ""
+			case strings.EqualFold(src, "fav") || strings.EqualFold(src, "favourites") || strings.EqualFold(src, "favorites"):
+				src = "fav"
+			default:
+				i := sess.Cfg.FolderIndex(src)
+				if i < 0 {
+					return nil, fmt.Errorf("no album called %q", src)
+				}
+				src = sess.Cfg.Folders[i].Name
+			}
+			ss.Source = src
 		}
 		if req.Enabled != nil {
 			ss.Enabled = *req.Enabled

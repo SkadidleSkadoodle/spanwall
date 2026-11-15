@@ -232,6 +232,7 @@ func register(s *mcp.Server) {
 		IntervalMin int    `json:"intervalMin,omitempty" jsonschema:"minutes between changes (with set or start)"`
 		Order       string `json:"order,omitempty" jsonschema:"shuffle or name (with set or start)"`
 		Mode        string `json:"mode,omitempty" jsonschema:"span, groups or per-display (with set or start)"`
+		Source      string `json:"source,omitempty" jsonschema:"album to shuffle (with set or start): all, fav (favourites) or a library folder name"`
 	}
 	add(s, "sw_slideshow", "Slideshow from the wallpaper folder: status, next, previous (from history), start, stop, or set interval/order/mode.",
 		func(in slideIn) (*mcp.CallToolResult, error) {
@@ -244,6 +245,9 @@ func register(s *mcp.Server) {
 			}
 			if in.Mode != "" {
 				body["mode"] = in.Mode
+			}
+			if in.Source != "" {
+				body["source"] = in.Source
 			}
 			switch in.Action {
 			case "", "status":
@@ -332,17 +336,18 @@ func register(s *mcp.Server) {
 		})
 
 	type frameIn struct {
-		Image string   `json:"image" jsonschema:"image path or file name in the wallpaper folder"`
-		Group []string `json:"group,omitempty" jsonschema:"for span groups: the group's monitor IDs (from sw_status groups and sw_list_displays); empty = spanned across all monitors"`
-		Zoom  float64  `json:"zoom,omitempty" jsonschema:"1 = default fill; 2 = twice as big (0.25 to 10)"`
-		DX    float64  `json:"dx,omitempty" jsonschema:"move the image right by this fraction of its displayed width (negative = left)"`
-		DY    float64  `json:"dy,omitempty" jsonschema:"move the image down by this fraction of its displayed height (negative = up)"`
-		FlipX bool     `json:"flipX,omitempty" jsonschema:"mirror the image left-right"`
-		FlipY bool     `json:"flipY,omitempty" jsonschema:"mirror the image top-bottom"`
-		Set   bool     `json:"set,omitempty" jsonschema:"true to save zoom/dx/dy/flips (all unset saves the plain fill); false just reads"`
-		Auto  bool     `json:"auto,omitempty" jsonschema:"true to forget the saved framing so smart framing picks it again"`
+		Image  string   `json:"image" jsonschema:"image path or file name in the wallpaper folder"`
+		Group  []string `json:"group,omitempty" jsonschema:"for span groups: the group's monitor IDs (from sw_status groups and sw_list_displays); empty = spanned across all monitors"`
+		Zoom   float64  `json:"zoom,omitempty" jsonschema:"1 = default fill; 2 = twice as big (0.25 to 10)"`
+		DX     float64  `json:"dx,omitempty" jsonschema:"move the image right by this fraction of its displayed width (negative = left)"`
+		DY     float64  `json:"dy,omitempty" jsonschema:"move the image down by this fraction of its displayed height (negative = up)"`
+		FlipX  bool     `json:"flipX,omitempty" jsonschema:"mirror the image left-right"`
+		FlipY  bool     `json:"flipY,omitempty" jsonschema:"mirror the image top-bottom"`
+		Rotate float64  `json:"rotate,omitempty" jsonschema:"turn the image clockwise about its centre, in degrees (any angle; negative = anticlockwise)"`
+		Set    bool     `json:"set,omitempty" jsonschema:"true to save zoom/dx/dy/flips (all unset saves the plain fill); false just reads"`
+		Auto   bool     `json:"auto,omitempty" jsonschema:"true to forget the saved framing so smart framing picks it again"`
 	}
-	add(s, "sw_framing", "Read or set how an image is zoomed, moved and flipped behind the monitors (the editor's Move image). Saved per image (and per span group). Re-apply with sw_set_wallpaper to see it.",
+	add(s, "sw_framing", "Read or set how an image is zoomed, moved, flipped and rotated behind the monitors (the editor's Move image). Saved per image (and per span group). Re-apply with sw_set_wallpaper to see it.",
 		func(in frameIn) (*mcp.CallToolResult, error) {
 			group := strings.Join(in.Group, ",")
 			if in.Auto {
@@ -355,7 +360,7 @@ func register(s *mcp.Server) {
 			if z == 0 {
 				z = 1
 			}
-			return postJSON("/api/framing", map[string]any{"image": in.Image, "group": group, "zoom": z, "dx": in.DX, "dy": in.DY, "flipX": in.FlipX, "flipY": in.FlipY})
+			return postJSON("/api/framing", map[string]any{"image": in.Image, "group": group, "zoom": z, "dx": in.DX, "dy": in.DY, "flipX": in.FlipX, "flipY": in.FlipY, "rotate": in.Rotate})
 		})
 
 	type configIn struct {

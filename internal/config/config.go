@@ -199,6 +199,9 @@ func (c *Config) RenameFolder(from, to string) error {
 	if j := c.FolderIndex(to); j >= 0 && j != i {
 		return fmt.Errorf("there is already a folder called %q", to)
 	}
+	if strings.EqualFold(c.Slideshow.Source, c.Folders[i].Name) {
+		c.Slideshow.Source = to
+	}
 	c.Folders[i].Name = to
 	return nil
 }
@@ -211,6 +214,9 @@ func (c *Config) DeleteFolder(name string) error {
 	}
 	if IsBuiltin(name) {
 		return fmt.Errorf("%s is built in and can't be deleted", c.Folders[i].Name)
+	}
+	if strings.EqualFold(c.Slideshow.Source, c.Folders[i].Name) {
+		c.Slideshow.Source = ""
 	}
 	c.Folders = append(c.Folders[:i], c.Folders[i+1:]...)
 	return nil
@@ -270,11 +276,12 @@ func (c *Config) SmartFrameOn() bool { return c.SmartFrame == nil || *c.SmartFra
 // Frame zooms and moves a spanned image: Zoom relative to the default fill,
 // DX/DY as fractions of the displayed image size; FlipX/FlipY mirror it.
 type Frame struct {
-	Zoom  float64 `json:"zoom"`
-	DX    float64 `json:"dx"`
-	DY    float64 `json:"dy"`
-	FlipX bool    `json:"flipX,omitempty"`
-	FlipY bool    `json:"flipY,omitempty"`
+	Zoom   float64 `json:"zoom"`
+	DX     float64 `json:"dx"`
+	DY     float64 `json:"dy"`
+	FlipX  bool    `json:"flipX,omitempty"`
+	FlipY  bool    `json:"flipY,omitempty"`
+	Rotate float64 `json:"rotate,omitempty"` // degrees clockwise
 }
 
 // WallhavenSync is the collection auto-download.
@@ -291,6 +298,9 @@ type Slideshow struct {
 	IntervalMin int    `json:"intervalMin,omitempty"` // default 30
 	Order       string `json:"order,omitempty"`       // "shuffle" (default) or "name"
 	Mode        string `json:"mode,omitempty"`        // "span" (default), "groups" or "per-display"
+	// Source is the album shuffled: "" (all wallpapers), "fav"
+	// (favourites) or a folder name.
+	Source string `json:"source,omitempty"`
 	// History holds recently shown image sets (newest last) for "previous"
 	// and so shuffle avoids repeats.
 	History [][]string `json:"history,omitempty"`

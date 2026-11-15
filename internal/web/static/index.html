@@ -33,9 +33,10 @@
       <button id="btnPhoto" title="Work out the layout from a phone photo">Photo calibration</button>
       <label class="check"><input type="checkbox" id="chkSnap" checked> Snap</label>
       <label class="check"><input type="checkbox" id="chkWallpaper" checked> Show wallpaper</label>
+      <label class="check" title="On: monitors are drawn angled and sized as the photo calibration saw them from your seat. Off: plain upright rectangles. Only changes the editor's drawing, not the wallpaper."><input type="checkbox" id="chkPersp" checked> As seen from my seat</label>
       <button id="btnMoveImg" class="toggle" title="Drag to move the wallpaper behind the monitors; drag a corner or scroll to resize">Move image</button>
-      <button id="btnFlipX" class="toggle" title="Mirror the wallpaper left-right (H)">Flip ↔</button>
-      <button id="btnFlipY" class="toggle" title="Mirror the wallpaper top-bottom (V)">Flip ↕</button>
+      <span class="rotgroup"><button id="btnRotL" title="Rotate 90° anticlockwise">⟲</button><button id="btnRotR" title="Rotate 90° clockwise">⟳</button></span>
+      <label class="field" title="Rotation in degrees, clockwise. Drag a curved arrow beside the image, or use [ and ] (Shift: 15°, Alt: 0.1°). H and V mirror the image."><input id="inpRot" type="number" step="1" style="width:66px">°</label>
       <button id="btnAutoImg" title="Let smart framing place this image again (forgets your own framing of it)">Auto frame</button>
       <button id="btnResetImg" title="Plain fill, unflipped, no smart framing for this image">Reset image</button>
       <span class="grow"></span>
@@ -93,15 +94,25 @@
       <button id="btnLibRefresh">Refresh</button>
     </div>
     <div class="toolbar slide">
-      <b>Slideshow</b>
-      <button id="btnSlidePrev" title="Previous (Ctrl+Alt+PgUp)">◀</button>
-      <button id="btnSlideNext" title="Next (Ctrl+Alt+PgDn)">▶</button>
-      <button id="btnSlideToggle" class="toggle" title="Start or pause (Ctrl+Alt+End)">Start</button>
-      <label class="field">every <input id="slideEvery" type="number" min="1" max="10080" style="width:70px"> min</label>
-      <label class="field">order <select id="slideOrder"><option value="shuffle">Shuffle</option><option value="name">By name</option></select></label>
-      <button id="btnDayNight" class="toggle" title="Show the Day folder by day and the Night folder at night">Day/night</button>
-      <label class="field">as <select id="slideMode"><option value="span">Span</option><option value="groups">Span groups</option><option value="per-display">Per monitor</option></select></label>
-      <span id="slideInfo" class="muted"></span>
+      <span class="sgroup">
+        <button id="btnSlidePrev" class="ico" title="Previous wallpaper (Ctrl+Alt+PgUp)">⏮</button>
+        <button id="btnSlideToggle" class="play" title="Start or pause the slideshow (Ctrl+Alt+End)">▶ Play</button>
+        <button id="btnSlideNext" class="ico" title="Next wallpaper (Ctrl+Alt+PgDn)">⏭</button>
+      </span>
+      <label class="field">Album <select id="slideSource" title="Which album the slideshow plays"></select></label>
+      <label class="field">Every <select id="slideEvery" title="How often the wallpaper changes"></select></label>
+      <span id="everyCustom" class="everycustom hidden"><input id="everyNum" type="number" min="1" step="1" value="45"><select id="everyUnit"><option value="1">min</option><option value="60">hours</option><option value="1440">days</option></select><button id="everySet" class="primary">Set</button><button id="everyCancel" title="Cancel">✕</button></span>
+      <button id="btnSlideOrder" class="toggle" title="On: random order. Off: by file name.">⤮ Shuffle</button>
+      <button id="btnDayNight" class="toggle" title="Day folder by day, Night folder at night">☀ Day/night</button>
+      <span class="grow"></span>
+      <span id="slideInfo" class="muted slideinfo"></span>
+      <span class="morewrap"><button id="btnSlideMore" class="ico" title="More slideshow settings">⋯</button>
+        <div id="slideMenu" class="popmenu hidden">
+          <div class="ph">Each change shows</div>
+          <label><input type="radio" name="smode" value="span"> One image across all monitors</label>
+          <label><input type="radio" name="smode" value="groups"> One image per span group</label>
+          <label><input type="radio" name="smode" value="per-display"> One image per monitor</label>
+        </div></span>
     </div>
     <div id="libTabs" class="libtabs"></div>
     <div id="libGrid" class="grid"></div>

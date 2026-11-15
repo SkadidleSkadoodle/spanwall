@@ -147,3 +147,28 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .plist .cur { color: var(--ok); font-size: 12px; }
 #libGrid .card .acts button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .panel > .check { display: flex; margin: 6px 0; }
+.rotarrow { cursor: grab; }
+.rotarrow .rothit { fill: transparent; pointer-events: all; }
+.rotarrow path { fill: none; stroke: var(--accent2); stroke-linecap: round; stroke-linejoin: round; pointer-events: none; filter: drop-shadow(0 0 1px #0b0f17); }
+.rotarrow:hover path { stroke: #fff; }
+.rotgroup { display: inline-flex; gap: 2px; }
+.rotgroup button { padding: 6px 10px; font-size: 15px; line-height: 1; }
+.side .need { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; background: var(--panel2); }
+.side .need label { margin-top: 0; }
+.side .need .big { font-size: 20px; font-weight: 700; margin: 2px 0 4px; }
+.side .need .ok { color: var(--ok); font-size: 12.5px; margin-top: 6px; }
+.side .need .warn { color: var(--warn); font-size: 12.5px; margin-top: 6px; }
+.side #needBox .need { margin-top: 16px; }
+.toolbar.slide { gap: 14px; }
+.toolbar.slide .sgroup { display: inline-flex; gap: 2px; }
+.toolbar.slide button.ico { padding: 6px 10px; line-height: 1; }
+.toolbar.slide button.play { min-width: 84px; font-weight: 600; }
+.toolbar.slide button.play.on { background: var(--accent2); border-color: var(--accent2); color: #06161a; }
+.toolbar.slide .slideinfo { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.morewrap { position: relative; }
+.everycustom { display: inline-flex; gap: 4px; align-items: center; }
+.everycustom input { width: 64px; }
+.popmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-width: 240px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.popmenu .ph { color: var(--muted); font-size: 12px; padding: 2px 6px 6px; }
+.popmenu label { display: flex; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 5px; cursor: pointer; }
+.popmenu label:hover { background: var(--panel2); }

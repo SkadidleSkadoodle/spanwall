@@ -24,15 +24,20 @@ and a Claude Desktop extension).
   (a closer laptop looks bigger), tilt and perspective, and the bend of
   curved screens, and warps each slice to match. Later, a photo of a normal
   wallpaper is enough to re-align a monitor that moved.
-- **Move, zoom and flip the image** behind the monitors to choose what shows
-  where (drag, corner handles, scroll, arrow keys, H and V to flip).
+- **Move, zoom and rotate the image** behind the monitors to choose what
+  shows where (drag, corner handles, scroll, arrow keys; curved arrows,
+  90° buttons or [ and ] to rotate by any angle; H and V mirror it).
+- **Size check:** the editor shows the smallest wallpaper that covers every
+  monitor without upscaling, and whether the current one does. A toggle
+  draws monitors as seen from your seat or as plain rectangles.
 - **Smart framing:** images you haven't framed yourself are placed
   automatically so their subject lands on screens rather than bezels or the
   gap behind a laptop. Dark backgrounds (space, night sky, black bars) never
   pull the frame.
-- **Slideshow** from a folder (shuffle without repeats, or by name), with
-  previous/next hotkeys and a tray icon. Favourite images come up more often;
-  banned ones never do.
+- **Slideshow** from any album (all wallpapers, favourites or one of your
+  folders), shuffled without repeats or by name, every 1 minute to 30 days,
+  with previous/next hotkeys and a tray icon. Favourite images come up more
+  often; banned ones never do.
 - **Library folders:** tabs for all wallpapers, favourites and your own
   folders; a wallpaper can be in as many folders as you like.
 - **Day and night:** a toggle that rotates through the Day folder by day and
