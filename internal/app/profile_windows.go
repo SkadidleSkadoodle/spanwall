@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
 )
 
 // ProfileKey names the set of attached monitors: their IDs, sorted.

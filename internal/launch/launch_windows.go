@@ -22,7 +22,7 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/client"
+	"github.com/SkadidleSkadoodle/spanwall/internal/client"
 )
 
 // TaskName is the Task Scheduler task.

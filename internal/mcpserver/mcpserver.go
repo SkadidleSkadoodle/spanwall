@@ -19,9 +19,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/image/draw"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/client"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/imageio"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/launch"
+	"github.com/SkadidleSkadoodle/spanwall/internal/client"
+	"github.com/SkadidleSkadoodle/spanwall/internal/imageio"
+	"github.com/SkadidleSkadoodle/spanwall/internal/launch"
 )
 
 // Run serves MCP on stdin/stdout until the client disconnects.
@@ -63,7 +63,7 @@ func register(s *mcp.Server) {
 			repo := filepath.Dir(bin)
 			return jsonResult(map[string]any{
 				"repo":      repo,
-				"github":    "martingomezmejia-ctrl/spanwall (private)",
+				"github":    "SkadidleSkadoodle/spanwall (public)",
 				"docs":      filepath.Join(repo, "CLAUDE.md"),
 				"build":     filepath.Join(repo, "build.ps1") + "  (stops the background app, builds, packs the extension)",
 				"reload":    "After rebuilding spanwall-mcp.exe, toggle the Spanwall extension off and on in Claude Desktop > Settings > Extensions.",
@@ -452,6 +452,14 @@ func register(s *mcp.Server) {
 	add(s, "sw_folders", "List, create, rename or delete library folders (Day and Night are built in; deleting a folder keeps its images).",
 		func(in foldersIn) (*mcp.CallToolResult, error) {
 			return postJSON("/api/folders", map[string]any{"action": in.Action, "name": in.Name, "to": in.To})
+		})
+
+	type removeIn struct {
+		Image string `json:"image" jsonschema:"file name in the wallpaper folder"`
+	}
+	add(s, "sw_remove_wallpaper", "Remove a wallpaper from the library: the file goes to the Recycle Bin (restorable), its rating, folders and framing are forgotten, and syncs won't download it again. Confirm with the user first.",
+		func(in removeIn) (*mcp.CallToolResult, error) {
+			return postJSON("/api/remove", map[string]any{"image": in.Image})
 		})
 
 	add(s, "sw_sources_sync", "Check the enabled wallpaper sources (Bing, NASA APOD, Wikimedia, Reddit, Unsplash) now and download new landscape images into the wallpaper folder.",

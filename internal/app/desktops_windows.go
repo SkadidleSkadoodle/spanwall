@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vdesk"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vdesk"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
 )
 
 // Section picks one vertical strip of an image (panorama mode).

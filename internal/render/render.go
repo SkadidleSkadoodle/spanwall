@@ -17,7 +17,7 @@ import (
 	"golang.org/x/image/draw"
 	"golang.org/x/image/math/f64"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 // Lanczos3 matches the filter Superpaper uses (Pillow's LANCZOS).

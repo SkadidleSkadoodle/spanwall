@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/render"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/render"
 )
 
 // getFraming returns an image's saved zoom and position, plus its size so

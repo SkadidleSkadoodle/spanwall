@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/pattern"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/pattern"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
 )
 
 // Saved is enough to put the wallpaper back exactly as it was.

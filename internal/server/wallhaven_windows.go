@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vdesk"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallhaven"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vdesk"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallhaven"
 )
 
 var whRatios = []struct {
@@ -197,7 +197,12 @@ func (s *Server) syncWallhaven() (*wallhaven.SyncResult, error) {
 	in := v.([3]string)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	res, err := wallhaven.SyncCollection(ctx, in[0], in[1], in[2])
+	skip := func(name string) bool {
+		v, _ := s.session(func(sess *app.Session) (any, error) { return sess.Cfg.IsRemoved(name), nil })
+		b, _ := v.(bool)
+		return b
+	}
+	res, err := wallhaven.SyncCollection(ctx, in[0], in[1], in[2], skip)
 	msg := ""
 	switch {
 	case err != nil:

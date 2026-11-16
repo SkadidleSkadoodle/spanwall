@@ -172,3 +172,5 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .popmenu .ph { color: var(--muted); font-size: 12px; padding: 2px 6px 6px; }
 .popmenu label { display: flex; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 5px; cursor: pointer; }
 .popmenu label:hover { background: var(--panel2); }
+#libGrid .card .rate .rm { padding: 2px 7px; opacity: .7; }
+#libGrid .card .rate .rm:hover { opacity: 1; background: var(--bad, #c0392b); border-color: var(--bad, #c0392b); color: #fff; }

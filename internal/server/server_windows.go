@@ -20,16 +20,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/launch"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/tray"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vdesk"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallhaven"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/web"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/launch"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/tray"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vdesk"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallhaven"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/web"
 )
 
 // Addr is where the background app listens. Localhost only.
@@ -173,6 +173,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sources/sync", s.sourcesSyncNow)
 	mux.HandleFunc("POST /api/rate", s.rate)
 	mux.HandleFunc("POST /api/folders", s.folders)
+	mux.HandleFunc("POST /api/remove", s.removeWallpaper)
 	mux.HandleFunc("POST /api/profiles", s.forgetProfile)
 	mux.HandleFunc("GET /api/desktops", s.getDesktops)
 	mux.HandleFunc("POST /api/desktops", s.setDesktops)

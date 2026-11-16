@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/image/draw"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 var (

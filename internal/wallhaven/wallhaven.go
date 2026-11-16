@@ -76,7 +76,7 @@ func get(ctx context.Context, u string, v any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Spanwall (https://github.com/martingomezmejia-ctrl/spanwall)")
+	req.Header.Set("User-Agent", "Spanwall (https://github.com/SkadidleSkadoodle/spanwall)")
 	if Key != "" {
 		req.Header.Set("X-API-Key", Key)
 	}
@@ -267,12 +267,15 @@ type SyncResult struct {
 	Total      int      `json:"total"`
 	Downloaded []string `json:"downloaded"`
 	Present    int      `json:"present"`
+	Removed    int      `json:"removed,omitempty"` // skipped because the user removed them
 	Errors     []string `json:"errors,omitempty"`
 }
 
 // SyncCollection downloads every wallpaper in the user's collection called
 // label (case-insensitive) that isn't in dir yet. Nothing is ever deleted.
-func SyncCollection(ctx context.Context, user, label, dir string) (*SyncResult, error) {
+// skip (may be nil) names files the user removed; they aren't downloaded
+// again.
+func SyncCollection(ctx context.Context, user, label, dir string, skip func(name string) bool) (*SyncResult, error) {
 	cs, err := Collections(ctx, "")
 	if err != nil && user != "" {
 		cs, err = Collections(ctx, user)
@@ -304,6 +307,10 @@ func SyncCollection(ctx context.Context, user, label, dir string) (*SyncResult, 
 			}
 			if st, err := os.Stat(filepath.Join(dir, name)); err == nil && st.Size() > 0 {
 				res.Present++
+				continue
+			}
+			if skip != nil && skip(name) {
+				res.Removed++
 				continue
 			}
 			if _, err := Save(ctx, w, dir); err != nil {

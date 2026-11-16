@@ -1,4 +1,4 @@
-module github.com/martingomezmejia-ctrl/spanwall
+module github.com/SkadidleSkadoodle/spanwall
 
 go 1.26.0
 

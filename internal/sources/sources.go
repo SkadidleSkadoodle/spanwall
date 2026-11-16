@@ -39,7 +39,7 @@ var Endpoints = struct {
 
 var client = &http.Client{Timeout: 90 * time.Second}
 
-const userAgent = "Spanwall/1.0 (wallpaper app; https://github.com/martingomezmejia-ctrl/spanwall)"
+const userAgent = "Spanwall/1.0 (wallpaper app; https://github.com/SkadidleSkadoodle/spanwall)"
 
 // Item is one image a source offers.
 type Item struct {
@@ -363,7 +363,8 @@ type Options struct {
 	Query                                   string
 	NASAKey, UnsplashKey                    string
 	MinWidth                                int
-	Skipped                                 map[string]bool // Item.Key() of images rejected before
+	Skipped                                 map[string]bool        // Item.Key() of images rejected before
+	Removed                                 func(name string) bool // file names the user removed (may be nil)
 	Now                                     time.Time
 }
 
@@ -410,6 +411,15 @@ func Run(ctx context.Context, o Options, dir string) Result {
 	}
 	if o.Unsplash {
 		add(Unsplash(ctx, o.UnsplashKey, o.Query, 4))
+	}
+	if o.Removed != nil {
+		var keep []Item
+		for _, it := range items {
+			if !o.Removed(it.FileName()) {
+				keep = append(keep, it)
+			}
+		}
+		items = keep
 	}
 	r := runItems(ctx, items, dir, o.MinWidth, o.Skipped)
 	r.Errors = append(res.Errors, r.Errors...)

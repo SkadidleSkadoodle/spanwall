@@ -18,8 +18,8 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/render"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/render"
 )
 
 var (

@@ -11,15 +11,15 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/client"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/install"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/launch"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/mcpserver"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/client"
+	"github.com/SkadidleSkadoodle/spanwall/internal/install"
+	"github.com/SkadidleSkadoodle/spanwall/internal/launch"
+	"github.com/SkadidleSkadoodle/spanwall/internal/mcpserver"
 )
 
 // version is set by release builds (-ldflags "-X main.version=1.0.0").
-var version = "1.2.0"
+var version = "1.2.1"
 
 const usage = `spanwall %s
 

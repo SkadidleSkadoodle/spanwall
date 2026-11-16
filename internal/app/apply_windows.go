@@ -14,14 +14,14 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/imageio"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/preview"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/render"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vision"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/imageio"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/preview"
+	"github.com/SkadidleSkadoodle/spanwall/internal/render"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vision"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
 )
 
 // ApplyRequest describes a wallpaper to render and (unless DryRun) set.

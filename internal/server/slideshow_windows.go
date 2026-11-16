@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vdesk"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vdesk"
 )
 
 var rng = rand.New(rand.NewSource(time.Now().UnixNano()))

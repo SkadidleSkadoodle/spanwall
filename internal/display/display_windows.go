@@ -8,8 +8,8 @@ import (
 
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
 )
 
 // Monitor is one display as Spanwall sees it.

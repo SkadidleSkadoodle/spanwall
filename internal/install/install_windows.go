@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/client"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/launch"
+	"github.com/SkadidleSkadoodle/spanwall/internal/client"
+	"github.com/SkadidleSkadoodle/spanwall/internal/launch"
 )
 
 // Dir is where Spanwall installs for the current user.

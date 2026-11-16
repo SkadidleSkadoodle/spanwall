@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
 )
 
 // SlideshowCount is how many images one change needs in a mode.

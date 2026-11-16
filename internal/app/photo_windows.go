@@ -14,12 +14,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/imageio"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vision"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/imageio"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vision"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
 )
 
 // ShowPhotoPattern puts the coloured dot grid on every monitor (monitor n

@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 func fillRect(img *image.RGBA, r image.Rectangle, c color.RGBA) {

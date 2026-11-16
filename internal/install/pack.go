@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/mcpserver"
+	"github.com/SkadidleSkadoodle/spanwall/internal/mcpserver"
 )
 
 // PackExtension writes Spanwall.mcpb into dir. The extension runs mcpExe
@@ -28,7 +28,7 @@ func PackExtension(dir, mcpExe, version string) (string, error) {
 		"version":          version,
 		"description":      "Span one wallpaper across monitors by their real physical layout. Preview, set and align wallpapers from chat. Talks to the Spanwall background app at 127.0.0.1:47920.",
 		"author":           map[string]string{"name": "Spanwall contributors"},
-		"repository":       map[string]string{"type": "git", "url": "https://github.com/martingomezmejia-ctrl/spanwall"},
+		"repository":       map[string]string{"type": "git", "url": "https://github.com/SkadidleSkadoodle/spanwall"},
 		"server": map[string]any{
 			"type":        "binary",
 			"entry_point": "spanwall-mcp.exe",

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 // Golden data comes from tools/golden/superpaper_ref.py, which runs

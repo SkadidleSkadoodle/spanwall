@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 // A warp equal to the rectangular crop must give the same picture as Slices.

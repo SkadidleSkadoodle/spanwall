@@ -90,7 +90,7 @@ func TestSyncDownloadsOnlyMissing(t *testing.T) {
 	defer func() { Key = "" }()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "wallhaven-aaa111.png"), []byte("x"), 0o644)
-	res, err := SyncCollection(context.Background(), "me", "spanwall", dir)
+	res, err := SyncCollection(context.Background(), "me", "spanwall", dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

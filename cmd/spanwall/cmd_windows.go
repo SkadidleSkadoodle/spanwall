@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/display"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/install"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/launch"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/server"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/display"
+	"github.com/SkadidleSkadoodle/spanwall/internal/install"
+	"github.com/SkadidleSkadoodle/spanwall/internal/launch"
+	"github.com/SkadidleSkadoodle/spanwall/internal/server"
 )
 
 // withSession opens COM and a session for one command.

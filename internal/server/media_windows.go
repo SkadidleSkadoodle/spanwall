@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/image/draw"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/imageio"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/imageio"
 )
 
 // preview renders without applying and returns a JPEG (base64 in JSON) plus

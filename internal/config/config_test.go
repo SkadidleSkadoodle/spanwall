@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 func TestSuperpaperOffsets(t *testing.T) {

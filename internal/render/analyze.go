@@ -7,7 +7,7 @@ import (
 
 	xdraw "golang.org/x/image/draw"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 // Small returns src scaled so its long side is at most n pixels (never

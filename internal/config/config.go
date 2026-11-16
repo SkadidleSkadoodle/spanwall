@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 // Config is the whole settings file.
@@ -54,6 +54,9 @@ type Config struct {
 	// be in any number of them. "Day" and "Night" always exist and feed the
 	// day/night schedule.
 	Folders []Folder `json:"folders,omitempty"`
+	// Removed lists wallpapers (lower-case file names) the user removed from
+	// the library, so syncs and sources don't download them again.
+	Removed []string `json:"removed,omitempty"`
 	// Periods is from an earlier version (day/night tags); Load moves it
 	// into the Day and Night folders.
 	Periods map[string]string `json:"periods,omitempty"`
@@ -268,6 +271,40 @@ func (c *Config) FoldersOf(image string) []string {
 		}
 	}
 	return out
+}
+
+// IsRemoved reports whether the user removed this file name from the
+// library.
+func (c *Config) IsRemoved(name string) bool {
+	k := strings.ToLower(filepath.Base(name))
+	for _, r := range c.Removed {
+		if r == k {
+			return true
+		}
+	}
+	return false
+}
+
+// ForgetImage drops everything kept about an image (rating, folders,
+// framing) and marks it removed.
+func (c *Config) ForgetImage(path string) {
+	k := strings.ToLower(filepath.Base(path))
+	delete(c.Ratings, k)
+	for i := range c.Folders {
+		c.SetInFolder(c.Folders[i].Name, k, false)
+	}
+	for fk := range c.Framing {
+		p := fk
+		if i := strings.Index(fk, "|"); i >= 0 {
+			p = fk[:i]
+		}
+		if strings.EqualFold(filepath.Base(p), k) {
+			delete(c.Framing, fk)
+		}
+	}
+	if !c.IsRemoved(k) {
+		c.Removed = append(c.Removed, k)
+	}
 }
 
 // SmartFrameOn reports whether unframed images are framed automatically.

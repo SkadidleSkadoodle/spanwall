@@ -15,12 +15,12 @@ import (
 
 	"golang.org/x/image/bmp"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/pattern"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/render"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vision"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/pattern"
+	"github.com/SkadidleSkadoodle/spanwall/internal/render"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vision"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
 )
 
 // PlacementsFor returns placements for the attached monitors, taking any

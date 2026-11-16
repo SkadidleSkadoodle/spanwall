@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
 )
 
 func TestShuffleAvoidsRecentAndGoesBack(t *testing.T) {

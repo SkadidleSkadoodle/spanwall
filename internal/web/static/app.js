@@ -872,6 +872,7 @@ function renderLibrary() {
           <button data-rate="fav" data-i="${i}" class="${im.rating === "fav" ? "on" : ""}" title="Favourite: comes up more often in the slideshow">★</button>
           <button data-rate="ban" data-i="${i}" class="${im.rating === "ban" ? "on" : ""}" title="Never show in the slideshow">Ban</button>
           <button class="fbtn" data-fmenu="${i}" title="${esc((im.folders || []).join(", ") || "In no folder")}">Folders${im.folders && im.folders.length ? " (" + im.folders.length + ")" : ""} ▾</button>
+          <button class="rm" data-remove="${i}" title="Remove from the library (moves the file to the Recycle Bin)">🗑</button>
         </div>
         <div class="acts"><button data-act="show" data-i="${i}">Show in editor</button><button data-act="apply" data-i="${i}" class="primary">Apply</button></div>
       </div>`).join("");
@@ -1078,6 +1079,17 @@ function initLibrary() {
         const r = await api("/api/rate", { image: im.path, rating });
         toast(rating === "fav" ? `${im.name} is a favourite` : rating === "ban" ? `${im.name} won't show in the slideshow` + (r.skipped ? "; moved on to the next one" : "") : `${im.name}: rating cleared`);
         await loadLibrary(); if (r.skipped) loadStatus();
+      } catch (err) { fail(err); }
+      return;
+    }
+    const rmb = e.target.closest("[data-remove]");
+    if (rmb) {
+      const im = S.lib[+rmb.dataset.remove];
+      if (!confirm(`Remove ${im.name} from the library?\n\nThe file goes to the Recycle Bin (you can restore it from there), and Wallhaven sync and your sources won't download it again.`)) return;
+      try {
+        const r = await api("/api/remove", { image: im.name });
+        toast(`${im.name} moved to the Recycle Bin` + (r.wasOnScreen ? ". It stays on screen until the next wallpaper." : ""));
+        await loadLibrary();
       } catch (err) { fail(err); }
       return;
     }

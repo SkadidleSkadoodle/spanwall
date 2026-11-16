@@ -56,15 +56,16 @@ const (
 	wmRButtonUp   = 0x0205
 	wmContextMenu = 0x007B
 
-	nimAdd    = 0
-	nimModify = 1
-	nimDelete = 2
-	nifInfo   = 0x10
-	niifInfo  = 1
-	niifWarn  = 2
-	nifMsg    = 1
-	nifIcon   = 2
-	nifTip    = 4
+	nimAdd      = 0
+	nimModify   = 1
+	nimDelete   = 2
+	nifInfo     = 0x10
+	niifInfo    = 1
+	niifWarn    = 2
+	niifNoSound = 0x10 // pop-ups stay silent
+	nifMsg      = 1
+	nifIcon     = 2
+	nifTip      = 4
 
 	mfString    = 0x0
 	mfChecked   = 0x8
@@ -391,9 +392,9 @@ func (t *Tray) Notify(title, msg string, warn bool) {
 	mi, _ := windows.UTF16FromString(msg)
 	copy(n.SzInfoTitle[:len(n.SzInfoTitle)-1], ti)
 	copy(n.SzInfo[:len(n.SzInfo)-1], mi)
-	n.DwInfoFlags = niifInfo
+	n.DwInfoFlags = niifInfo | niifNoSound
 	if warn {
-		n.DwInfoFlags = niifWarn
+		n.DwInfoFlags = niifWarn | niifNoSound
 	}
 	pShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(n)))
 }

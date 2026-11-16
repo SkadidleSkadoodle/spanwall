@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 // An overlay is something temporary on the screens (identify cards or the

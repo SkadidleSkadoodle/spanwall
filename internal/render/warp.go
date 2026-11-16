@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
 )
 
 // Mapper maps slice pixels to canvas pixels, for monitors with a

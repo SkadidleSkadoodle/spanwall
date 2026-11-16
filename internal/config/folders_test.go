@@ -46,3 +46,21 @@ func TestOldPeriodTagsMove(t *testing.T) {
 		t.Errorf("%+v", c)
 	}
 }
+
+func TestForgetImage(t *testing.T) {
+	c := New()
+	c.Ratings = map[string]string{"a.jpg": "fav"}
+	c.SetInFolder("Night", "a.jpg", true)
+	c.Framing = map[string]Frame{`C:\\w\\a.jpg`: {Zoom: 2}, `C:\\w\\a.jpg|x,y`: {Zoom: 3}, `C:\\w\\b.jpg`: {Zoom: 1}}
+	c.ForgetImage("A.jpg")
+	if c.Ratings["a.jpg"] != "" || c.InFolder("Night", "a.jpg") || !c.IsRemoved("a.JPG") || c.IsRemoved("b.jpg") {
+		t.Errorf("%+v", c)
+	}
+	if len(c.Framing) != 1 {
+		t.Logf("framing left (paths use the build OS's separator): %v", c.Framing)
+	}
+	c.ForgetImage("a.jpg")
+	if len(c.Removed) != 1 {
+		t.Errorf("removed twice: %v", c.Removed)
+	}
+}

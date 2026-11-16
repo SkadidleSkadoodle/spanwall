@@ -13,12 +13,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/display"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/geometry"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/wallpaper"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/win"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/display"
+	"github.com/SkadidleSkadoodle/spanwall/internal/geometry"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
+	"github.com/SkadidleSkadoodle/spanwall/internal/win"
 )
 
 // Session is a fresh view of the monitors and config. Create one per

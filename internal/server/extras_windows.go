@@ -11,13 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
-	"github.com/martingomezmejia-ctrl/spanwall/internal/app"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/config"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/paths"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/sources"
-	"github.com/martingomezmejia-ctrl/spanwall/internal/vdesk"
+	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
+	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
+	"github.com/SkadidleSkadoodle/spanwall/internal/sources"
+	"github.com/SkadidleSkadoodle/spanwall/internal/vdesk"
 )
 
 // ---- API keys for the extra sources (kept out of config.json) ---------------------
@@ -81,7 +84,8 @@ func (s *Server) syncSources() (*sources.Result, error) {
 		}
 		return [2]any{sources.Options{Bing: c.Sources.Bing, APOD: c.Sources.APOD, Wikimedia: c.Sources.Wikimedia,
 			Reddit: c.Sources.Reddit, Subreddits: subreddits(c), Unsplash: c.Sources.Unsplash, Query: c.Sources.Query,
-			NASAKey: readSecret("nasa"), UnsplashKey: readSecret("unsplash"), MinWidth: c.Sources.MinWidth, Skipped: skip}, wallpaperDir(c)}, nil
+			NASAKey: readSecret("nasa"), UnsplashKey: readSecret("unsplash"), MinWidth: c.Sources.MinWidth, Skipped: skip,
+			Removed: removedSet(c)}, wallpaperDir(c)}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -439,4 +443,98 @@ func (s *Server) monitorsChanged(sess *app.Session) (string, error) {
 		go s.notify("Monitors changed", fmt.Sprintf("%d monitor(s): switched to layout %q", n, name), false)
 	}
 	return fmt.Sprintf("layout %q (switched: %v): %v", name, switched, err), nil
+}
+
+// removedSet snapshots the removed list for a sources run (it runs outside
+// the session).
+func removedSet(c *config.Config) func(string) bool {
+	m := map[string]bool{}
+	for _, r := range c.Removed {
+		m[r] = true
+	}
+	return func(name string) bool { return m[strings.ToLower(filepath.Base(name))] }
+}
+
+// ---- removing wallpapers ----------------------------------------------------------
+
+var (
+	procSHFileOperation = windows.NewLazySystemDLL("shell32.dll").NewProc("SHFileOperationW")
+)
+
+type shFileOp struct {
+	Hwnd         uintptr
+	Func         uint32
+	From         *uint16
+	To           *uint16
+	Flags        uint16
+	AnyAborted   int32
+	NameMappings uintptr
+	Title        *uint16
+}
+
+// recycle moves a file to the Recycle Bin (so a removal can be undone).
+func recycle(path string) error {
+	const foDelete, fofSilent, fofNoConfirm, fofAllowUndo, fofNoErrorUI = 3, 0x4, 0x10, 0x40, 0x400
+	from, err := windows.UTF16FromString(path)
+	if err != nil {
+		return err
+	}
+	from = append(from, 0) // the list ends with an extra NUL
+	op := shFileOp{Func: foDelete, From: &from[0], Flags: fofSilent | fofNoConfirm | fofAllowUndo | fofNoErrorUI}
+	r, _, _ := procSHFileOperation.Call(uintptr(unsafe.Pointer(&op)))
+	if r != 0 {
+		return fmt.Errorf("couldn't move %s to the Recycle Bin (error %#x)", filepath.Base(path), r)
+	}
+	if op.AnyAborted != 0 {
+		return fmt.Errorf("moving %s to the Recycle Bin was cancelled", filepath.Base(path))
+	}
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s is still there (in use?)", filepath.Base(path))
+	}
+	return nil
+}
+
+// removeImage moves a library image to the Recycle Bin and forgets it.
+// Only files directly in the wallpaper folder can be removed.
+func (s *Server) removeImage(name string) (map[string]any, error) {
+	v, err := s.session(func(sess *app.Session) (any, error) {
+		dir := wallpaperDir(sess.Cfg)
+		base := filepath.Base(name)
+		if base == "." || base == "" || strings.ContainsAny(base, `\/:`) {
+			return nil, fmt.Errorf("not a file name: %q", name)
+		}
+		p := filepath.Join(dir, base)
+		if _, err := os.Stat(p); err != nil {
+			return nil, fmt.Errorf("%s isn't in the wallpaper folder", base)
+		}
+		if err := recycle(p); err != nil {
+			return nil, err
+		}
+		sess.Cfg.ForgetImage(base)
+		onScreen := false
+		if la := sess.Cfg.LastApplied; la != nil {
+			for _, i := range la.Images {
+				onScreen = onScreen || strings.EqualFold(filepath.Base(i), base)
+			}
+		}
+		return map[string]any{"removed": base, "recycleBin": true, "wasOnScreen": onScreen}, sess.Save()
+	})
+	s.changed("library", err)
+	if err != nil {
+		return nil, err
+	}
+	s.log.Printf("removed %v (Recycle Bin)", v.(map[string]any)["removed"])
+	return v.(map[string]any), nil
+}
+
+func (s *Server) removeWallpaper(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Image string `json:"image"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	v, err := s.removeImage(req.Image)
+	writeJSON(w, v, err)
 }
