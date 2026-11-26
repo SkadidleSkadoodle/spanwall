@@ -188,7 +188,7 @@ function liveSettingsHTML(name) {
   const ctl = (k, d) => {
     const v = k in vals ? vals[k] : d.default, label = esc(d.label || k), id = `lp-${k}`;
     switch (d.type) {
-      case "range": return `<label class="set" for="${id}"><span>${label}</span><b>${esc(v)}</b><input id="${id}" type="range" data-lp="${esc(k)}" min="${d.min ?? 0}" max="${d.max ?? 1}" step="${d.step ?? 0.01}" value="${esc(v)}"></label>`;
+      case "range": return `<label class="set" for="${id}"><span>${label}</span><b class="num" data-num="${esc(k)}" title="Double-click to type any value, even outside the slider's range">${esc(v)}</b><input id="${id}" type="range" data-lp="${esc(k)}" min="${d.min ?? 0}" max="${d.max ?? 1}" step="${d.step ?? 0.01}" value="${esc(v)}"></label>`;
       case "color": return `<label class="set" for="${id}"><span>${label}</span><input id="${id}" type="color" data-lp="${esc(k)}" value="${esc(v)}"></label>`;
       case "toggle": return `<label class="set" for="${id}"><span>${label}</span><input id="${id}" type="checkbox" data-lp="${esc(k)}" ${v ? "checked" : ""}></label>`;
       case "select": return `<label class="set" for="${id}"><span>${label}</span><select id="${id}" data-lp="${esc(k)}">${(d.options || []).map((o) => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>`;
@@ -307,6 +307,32 @@ $("#side").addEventListener("input", (e) => {
   if (el.type === "range") { const b = el.parentElement.querySelector("b"); if (b) b.textContent = el.value; }
   if (k === "_theme") { $("#liveSettings").dataset.key = ""; render(); } // custom shows two more colours
   liveParamChanged(name);
+});
+
+// Double-click a slider's number to type any value; the slider only covers the
+// usual range, the scene gets whatever you type.
+$("#side").addEventListener("dblclick", (e) => {
+  const b = e.target.closest("b.num");
+  if (!LV.on || !b) return;
+  e.preventDefault();
+  const k = b.dataset.num, name = LV.st.scene, slider = b.parentElement.querySelector("input[type=range]");
+  const inp = document.createElement("input");
+  inp.type = "number"; inp.step = "any"; inp.value = b.textContent; inp.className = "numedit";
+  b.replaceWith(inp); inp.focus(); inp.select();
+  let done = false;
+  const finish = (keep) => {
+    if (done) return; done = true;
+    const v = parseFloat(inp.value);
+    if (keep && isFinite(v)) {
+      liveValues(name)[k] = v;
+      if (slider) slider.value = String(v); // the slider shows its nearest end when out of range
+      b.textContent = String(v);
+      liveParamChanged(name);
+    }
+    inp.replaceWith(b);
+  };
+  inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") finish(true); else if (ev.key === "Escape") finish(false); ev.stopPropagation(); });
+  inp.addEventListener("blur", () => finish(true));
 });
 
 $("#side").addEventListener("change", async (e) => {
