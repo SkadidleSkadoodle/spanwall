@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed static
+//go:embed all:static
 var static embed.FS
 
 // Handler serves the UI.
@@ -42,4 +42,14 @@ func devDir() string {
 		return d
 	}
 	return ""
+}
+
+// FS returns the static files: from the repo when running from its bin
+// (edits show up without a rebuild), embedded otherwise.
+func FS() fs.FS {
+	if dir := devDir(); dir != "" {
+		return os.DirFS(dir)
+	}
+	sub, _ := fs.Sub(static, "static")
+	return sub
 }

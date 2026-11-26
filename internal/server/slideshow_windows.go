@@ -101,6 +101,9 @@ func (s *Server) slideStep(back bool) (any, error) {
 // slideshowLoop changes the wallpaper when the slideshow is due.
 func (s *Server) slideshowLoop() {
 	for range time.Tick(20 * time.Second) {
+		if s.liveOn() {
+			continue // the animation is showing; changing the still wallpaper under it is wasted work
+		}
 		s.checkSchedule()
 		due, _ := s.session(func(sess *app.Session) (any, error) {
 			ss := &sess.Cfg.Slideshow
@@ -230,6 +233,9 @@ func (s *Server) slideshowNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.slideStep(req.Back)
+	if err == nil {
+		s.session(func(sess *app.Session) (any, error) { return nil, s.liveOff(sess) })
+	}
 	writeJSON(w, v, err)
 }
 

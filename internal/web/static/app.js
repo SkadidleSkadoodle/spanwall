@@ -1410,6 +1410,7 @@ function switchTab(name) {
   if (name === "desktops") loadDesktops();
   if (name === "wallhaven") { whInit(); whCollections(); if (!WH.results.length) whSearch(false); }
   if (name === "settings") loadSettingsExtra();
+  liveTab(name === "live");
 }
 
 async function refresh() {
@@ -1426,6 +1427,7 @@ function listen() {
       if (what === "proposal") { const r = await api("/api/align"); if (r.proposal) { switchTab("layout"); showProposal(r.proposal); toast("A photo calibration result is ready"); } }
       if (["layout", "config", "monitors", "wallpaper"].includes(what) && !S.dragging && !isDirty()) await loadLayout();
       if (["library", "wallpaper"].includes(what) && $("#tab-library").classList.contains("active")) loadLibrary();
+      if (what === "live" && $("#tab-live").classList.contains("active")) liveLoad();
       if (what === "config" && $("#tab-settings").classList.contains("active")) loadSettingsExtra();
       else render();
     } catch { /* app restarting */ }

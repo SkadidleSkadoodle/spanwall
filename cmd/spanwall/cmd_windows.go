@@ -17,6 +17,7 @@ import (
 	"github.com/SkadidleSkadoodle/spanwall/internal/display"
 	"github.com/SkadidleSkadoodle/spanwall/internal/install"
 	"github.com/SkadidleSkadoodle/spanwall/internal/launch"
+	"github.com/SkadidleSkadoodle/spanwall/internal/live"
 	"github.com/SkadidleSkadoodle/spanwall/internal/server"
 	"github.com/SkadidleSkadoodle/spanwall/internal/win"
 )
@@ -212,6 +213,17 @@ func cmdApply(args []string) error {
 }
 
 func cmdServe([]string) error { return server.Run() }
+
+// cmdLiveHost runs the animated wallpaper window (started by the background
+// app, not meant to be run by hand).
+func cmdLiveHost(args []string) error {
+	url := "http://" + server.Addr + "/live/"
+	if len(args) > 0 {
+		url = args[0]
+	}
+	os.Exit(live.RunHost(url))
+	return nil
+}
 
 func cmdStart([]string) error {
 	if err := launch.Start(); err != nil {

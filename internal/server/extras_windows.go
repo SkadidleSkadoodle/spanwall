@@ -298,7 +298,7 @@ func (s *Server) rateImage(name, rating, folder string, in bool) (map[string]any
 		return nil, err
 	}
 	out := v.(map[string]any)
-	if onScreen {
+	if onScreen && !s.liveOn() {
 		if _, err := s.slideStep(false); err == nil {
 			out["skipped"] = true
 		}

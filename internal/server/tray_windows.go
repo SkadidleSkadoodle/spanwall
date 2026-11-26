@@ -49,6 +49,7 @@ const (
 	menuFavorite
 	menuBan
 	menuFixMonitors
+	menuLive
 	menuQuit
 )
 
@@ -112,16 +113,18 @@ func (s *Server) restartTray() {
 }
 
 func (s *Server) trayMenu() []tray.Item {
-	on := false
+	on, liveOn := false, false
 	if v, err := s.session(func(sess *app.Session) (any, error) { return sess.Cfg.Slideshow.Enabled, nil }); err == nil {
 		on = v.(bool)
 	}
+	liveOn = s.liveOn()
 	return []tray.Item{
 		{ID: menuOpen, Label: "Open Spanwall", Default: true},
 		{Separator: true},
 		{ID: menuNext, Label: "Next wallpaper"},
 		{ID: menuPrev, Label: "Previous wallpaper"},
 		{ID: menuSlideshow, Label: "Slideshow", Checked: on},
+		{ID: menuLive, Label: "Animated wallpaper", Checked: liveOn},
 		{ID: menuIdentify, Label: "Identify monitors"},
 		{ID: menuFixMonitors, Label: "Fix monitors (restarts Explorer)"},
 		{Separator: true},
@@ -160,6 +163,8 @@ func (s *Server) trayAction(id int) {
 				s.notify("Monitors fixed", fmt.Sprintf("Explorer sees all %v monitors again", res["windowsShows"]), false)
 			}
 		}()
+	case menuLive:
+		go s.toggleLive()
 	case menuQuit:
 		s.stop()
 	}
@@ -168,10 +173,10 @@ func (s *Server) trayAction(id int) {
 func (s *Server) hotkey(action string) {
 	var err error
 	switch action {
-	case "next":
-		_, err = s.slideStep(false)
-	case "previous":
-		_, err = s.slideStep(true)
+	case "next", "previous":
+		if _, err = s.slideStep(action == "previous"); err == nil {
+			s.session(func(sess *app.Session) (any, error) { return nil, s.liveOff(sess) })
+		}
 	case "pause":
 		var on bool
 		on, err = s.toggleSlideshow()
@@ -208,6 +213,7 @@ func openEditor() {
 
 // stop shuts the background app down (API shutdown and the tray's Quit).
 func (s *Server) stop() {
+	s.liveStop()
 	s.endOverlay(true)
 	s.stopTray()
 	time.Sleep(100 * time.Millisecond)

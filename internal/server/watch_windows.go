@@ -54,6 +54,7 @@ func (s *Server) watchMonitors() {
 		}
 		v, err := s.session(func(sess *app.Session) (any, error) { return s.monitorsChanged(sess) })
 		s.log.Printf("monitors changed (%s): %v %v", sig, v, err)
+		s.liveSend("reload")
 		s.events.publish("monitors")
 	}
 }

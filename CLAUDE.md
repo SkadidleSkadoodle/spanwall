@@ -91,6 +91,40 @@ Linux).
   carried quad; `resetShape` drops it). `render.SlicesWarp` renders quad monitors with a
   projective bilinear sampler (supersampled up to 3x3); the live pattern uses
   `pattern.CalibrationMap`.
+- Phase 8, live (animated ASCII) wallpaper:
+  - `internal/live` (pure Go + `host_windows.go`). `geometry.go` Build: per monitor a grid of
+    window px <-> desk mm points (17x9 for quads/meshes, 2x2 for rectangles) from the same shapes
+    static wallpapers use (`PxToMM`). `convert.go` GIF/image frames -> ASCII clip (chars +
+    base64 RGB per cell). `scenes.go` scene files: built-ins in `web/static/live/scenes`, the
+    user's in `.spanwall\scenes` (win on a name clash, `_*.js` are helpers, `*.clip.json` clips).
+  - The page `web/static/live/runtime.js`: ONE WebGL2 canvas over the whole virtual screen;
+    the scene fills a desk-mm character grid (typed arrays); a fragment shader maps each pixel
+    to mm through the monitor's mesh, looks up the cell's glyph/colour textures and samples a
+    glyph atlas (40x72 slots, 4 px padding, mip level <= 2; block and shade characters fill
+    their slot so neighbours join). Frames paced by setTimeout then rAF (no 240 Hz wakeups);
+    draw() returning false skips the upload and redraw. `?preview=1` draws the desk flat for
+    the editor's Live tab. Scene API: `mcpserver/live.go` SceneGuide (also docs/live-scenes.md).
+  - The host is a child process, `spanwall live-host` (`host_windows.go`): WebView2 via
+    github.com/jchv/go-webview2 (pure Go; its Embed log.Fatal()s on failure, hence the separate
+    process). Window: on 24H2+ ("raised desktop", Progman has WS_EX_NOREDIRECTIONBITMAP) a
+    WS_EX_LAYERED child of Progman placed after SHELLDLL_DefView with the shell's WorkerW kept
+    at the bottom (Microsoft's guidance quoted in Lively's WinDesktopCore.cs); older builds:
+    child of the WorkerW behind the icons. Created hidden; shown when the page posts "ready".
+    Every 1 s: health (exit 3 if Explorer took the window away; the server restarts it),
+    resize to Progman, coverage (SHQueryUserNotificationState full-screen, or a visible,
+    uncloaked, opaque, non-tool window covering >= 90% of a monitor) -> `spanwall.covered()`
+    in the page; everything covered, locked (WTS) or displays off (GUID_CONSOLE_DISPLAY_STATE)
+    -> controller IsVisible false, so the page stops completely. stdin commands: reload,
+    hide, show, quit; stdin closing ends it.
+  - `server/live_windows.go` supervises it (restart with backoff), serves `/live/scenes/{file}`
+    and `/api/live*` (runtime: scene + desk geometry; report: page fps/errors; scene read and
+    write; convert GIF/image/video via ffmpeg). Overlays hide it, layout and monitor changes
+    reload it, applying a still wallpaper (apply, next/previous, Wallhaven apply) turns it
+    off, the slideshow and day/night schedule pause while it is on. Active scene files are
+    polled every 2 s for hot reload. Tray item "Animated wallpaper". MCP: sw_live,
+    sw_live_scene, sw_live_convert.
+  - `tools/livedev`: serves the page with a made-up desk (any OS) to work on scenes.
+  - Measured spike (3 monitors, full-grid redraw at 30 fps): ~4% CPU, ~30% GPU, ~830 MB.
 
 ## Rules
 

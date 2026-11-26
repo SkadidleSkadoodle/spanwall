@@ -61,13 +61,14 @@ func main() {
 		}
 	}
 	cmds := map[string]func([]string) error{
-		"displays": cmdDisplays,
-		"identify": cmdIdentify,
-		"layout":   cmdLayout,
-		"apply":    cmdApply,
-		"serve":    cmdServe,
-		"start":    cmdStart,
-		"stop":     cmdStop,
+		"displays":  cmdDisplays,
+		"identify":  cmdIdentify,
+		"layout":    cmdLayout,
+		"apply":     cmdApply,
+		"serve":     cmdServe,
+		"live-host": cmdLiveHost,
+		"start":     cmdStart,
+		"stop":      cmdStop,
 		"mcp": func([]string) error {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer stop()

@@ -56,6 +56,7 @@ type Server struct {
 
 	dw      *wallpaper.DesktopWallpaper // COM thread only
 	fixMu   sync.Mutex                  // one Explorer fix at a time
+	live    liveState                   // animated wallpaper host
 	lastFix time.Time                   // last automatic Explorer restart
 }
 
@@ -93,6 +94,8 @@ func Run() error {
 	go s.wallhavenSyncLoop()
 	go s.sourcesLoop()
 	s.startTray()
+	go s.liveSync()
+	go s.liveWatch()
 
 	s.http = &http.Server{Handler: s.routes(), ReadHeaderTimeout: 10 * time.Second}
 	s.log.Printf("spanwall %s serving on http://%s (pid %d)", app.Version, Addr, os.Getpid())
@@ -229,6 +232,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/config", s.getConfig)
 	mux.HandleFunc("POST /api/config", s.setConfig)
 	mux.HandleFunc("POST /api/shutdown", s.shutdown)
+	s.liveRoutes(mux)
 	return s.guard(mux)
 }
 
@@ -307,6 +311,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 			"wallhavenKey":    wallhaven.Key != "",
 			"wallhavenSync": map[string]any{"enabled": sess.Cfg.WallhavenSync.Enabled, "collection": syncLabel(sess.Cfg),
 				"lastRun": sess.Cfg.WallhavenSync.LastRun, "lastResult": sess.Cfg.WallhavenSync.LastResult},
+			"live":       map[string]any{"enabled": sess.Cfg.Live.Enabled, "scene": sess.Cfg.Live.SceneName(), "running": s.liveRunning()},
 			"smartFrame": sess.Cfg.SmartFrameOn(),
 			"sync":       map[string]any{"accent": sess.Cfg.Sync.Accent, "lockScreen": sess.Cfg.Sync.LockScreen, "last": app.LookResult()},
 			"schedule":   scheduleInfo(sess.Cfg),
@@ -423,7 +428,11 @@ func (s *Server) apply(w http.ResponseWriter, r *http.Request) {
 		if err := resolveImages(sess.Cfg, req.Images); err != nil {
 			return nil, err
 		}
-		return sess.Apply(req)
+		v, err := sess.Apply(req)
+		if err == nil {
+			err = s.liveOff(sess) // a still wallpaper replaces the animation
+		}
+		return v, err
 	})
 	if err == nil {
 		vdesk.ClearSavedWallpapers()
@@ -685,6 +694,9 @@ func (s *Server) shutdown(w http.ResponseWriter, r *http.Request) {
 func (s *Server) changed(what string, err error) {
 	if err == nil {
 		s.events.publish(what)
+		if what == "layout" {
+			s.liveSend("reload") // the animation follows the monitors' new places
+		}
 	}
 }
 

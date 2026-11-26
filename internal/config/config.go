@@ -66,6 +66,25 @@ type Config struct {
 	Sync SyncOptions `json:"sync"`
 	// Sources are other places new wallpapers are downloaded from.
 	Sources Sources `json:"sources"`
+	// Live is the animated (ASCII scene) wallpaper.
+	Live Live `json:"live"`
+}
+
+// Live is the animated wallpaper: a scene drawn behind the desktop icons.
+type Live struct {
+	Enabled bool    `json:"enabled"`
+	Scene   string  `json:"scene,omitempty"`  // scene file name without .js (default "plasma")
+	FPS     int     `json:"fps,omitempty"`    // frame cap; 0 = the scene's own
+	CharMM  float64 `json:"charMM,omitempty"` // character height in mm; 0 = the scene's own
+	Font    string  `json:"font,omitempty"`   // CSS font family; empty = Cascadia Mono, Consolas
+}
+
+// SceneName returns the live scene to show.
+func (l Live) SceneName() string {
+	if l.Scene == "" {
+		return "plasma"
+	}
+	return l.Scene
 }
 
 // Profile is one monitor setup's layout and last wallpaper.

@@ -23,6 +23,7 @@ type overlayState struct {
 // overlay is up yet, and (re)arms the auto-restore timer. ttl 0 means no
 // timer: the overlay stays until it is stopped or replaced.
 func (s *Server) showOverlay(kind string, ttl time.Duration, show func(*app.Session) error) error {
+	s.liveSend("hide") // the cards or pattern are drawn on the wallpaper under it
 	_, err := s.session(func(sess *app.Session) (any, error) {
 		s.mu.Lock()
 		cur := s.overlay
@@ -73,6 +74,7 @@ func (s *Server) endOverlay(restore bool) {
 	if restore {
 		s.session(func(sess *app.Session) (any, error) { return nil, sess.RestoreWallpaper(st.saved) })
 	}
+	s.liveSend("show")
 	s.events.publish("overlay")
 }
 

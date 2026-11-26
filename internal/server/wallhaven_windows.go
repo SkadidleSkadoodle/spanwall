@@ -99,7 +99,11 @@ func (s *Server) wallhavenDownload(w http.ResponseWriter, r *http.Request) {
 	if req.Apply {
 		s.endOverlay(false)
 		v, err := s.session(func(sess *app.Session) (any, error) {
-			return sess.Apply(app.ApplyRequest{Images: []string{path}, Mode: "span"})
+			v, err := sess.Apply(app.ApplyRequest{Images: []string{path}, Mode: "span"})
+			if err == nil {
+				err = s.liveOff(sess)
+			}
+			return v, err
 		})
 		if err != nil {
 			writeJSON(w, nil, fmt.Errorf("downloaded to %s but applying failed: %w", path, err))

@@ -39,6 +39,7 @@ func Run(ctx context.Context, version string) error {
 func register(s *mcp.Server) {
 	add(s, "sw_status", "Is the background app running; version, monitors, active layout, last applied wallpaper, wallpaper folder.",
 		func(in struct{}) (*mcp.CallToolResult, error) { return getJSON("/api/status") })
+	registerLive(s)
 
 	add(s, "sw_start", "Start the Spanwall background app if it isn't running (other tools also do this automatically).",
 		func(in struct{}) (*mcp.CallToolResult, error) {

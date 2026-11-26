@@ -14,6 +14,7 @@
     <button data-tab="layout" class="active">Layout</button>
     <button data-tab="library">Library</button>
     <button data-tab="wallhaven">Wallhaven</button>
+    <button data-tab="live">Live</button>
     <button data-tab="desktops">Desktops</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -136,6 +137,44 @@
     <div class="row pad"><button id="whMore" class="hidden">Load more</button></div>
   </section>
 
+  <!-- LIVE --------------------------------------------------------------- -->
+  <section id="tab-live" class="tab">
+    <div class="toolbar">
+      <button id="liveToggle" class="toggle">Animated wallpaper: off</button>
+      <span class="sep"></span>
+      <label class="field">Scene <select id="liveScene"></select></label>
+      <label class="field">Frame rate <select id="liveFps">
+        <option value="0">scene's own</option><option value="10">10 fps</option><option value="15">15 fps</option>
+        <option value="20">20 fps</option><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label>
+      <label class="field">Character height <input id="liveChar" type="number" min="0" max="40" step="0.2" style="width:76px"> mm</label>
+      <button id="liveSave">Save</button>
+      <span class="grow"></span>
+      <span id="liveStats" class="muted"></span>
+    </div>
+    <div class="editor">
+      <div class="canvas-wrap live-preview"><iframe id="livePreview" title="Live preview"></iframe>
+        <div class="hint">Preview of the whole desk: monitors bright, the gaps between them dimmed.</div></div>
+      <div class="side">
+        <h3 id="liveTitle"></h3>
+        <div id="liveDesc" class="id"></div>
+        <div class="row"><button id="liveUse" class="primary">Show on the desktop</button><button id="liveEdit">Edit code</button></div>
+        <label>Scenes</label>
+        <div id="liveList" class="live-list"></div>
+        <label>Make a scene from a GIF, video or picture</label>
+        <input id="liveConvPath" placeholder="C:\path\to\file.gif" spellcheck="false">
+        <div class="pair"><input id="liveConvName" placeholder="scene name"><input id="liveConvCols" type="number" min="40" max="600" placeholder="columns (240)"></div>
+        <label class="check"><input id="liveConvMono" type="checkbox"> one colour (green)</label>
+        <div class="row"><button id="liveConvert">Convert</button></div>
+        <div class="note">Videos need ffmpeg on the PATH. Scenes live in <span id="liveDir"></span>; edit them there or ask Claude to write one.</div>
+      </div>
+    </div>
+    <div id="liveCode" class="live-code hidden">
+      <div class="row"><b id="liveCodeName"></b><span class="grow"></span><span class="muted">Saving makes your own copy; built-in scenes stay as they are.</span>
+        <button id="liveCodeSave" class="primary">Save and show</button><button id="liveCodeClose">Close</button></div>
+      <textarea id="liveCodeText" spellcheck="false"></textarea>
+    </div>
+  </section>
+
   <!-- DESKTOPS ----------------------------------------------------------- -->
   <section id="tab-desktops" class="tab">
     <div class="panel">
@@ -217,5 +256,6 @@
 </main>
 <div id="toast" class="toast hidden"></div>
 <script src="app.js"></script>
+<script src="live-ui.js"></script>
 </body>
 </html>

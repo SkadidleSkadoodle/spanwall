@@ -11,6 +11,7 @@ func cmdIdentify([]string) error { return errWindowsOnly }
 func cmdLayout([]string) error   { return errWindowsOnly }
 func cmdApply([]string) error    { return errWindowsOnly }
 func cmdServe([]string) error    { return errWindowsOnly }
+func cmdLiveHost([]string) error { return errWindowsOnly }
 func cmdStart([]string) error    { return errWindowsOnly }
 func cmdStop([]string) error     { return errWindowsOnly }
 
