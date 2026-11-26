@@ -77,6 +77,21 @@ type Live struct {
 	FPS     int     `json:"fps,omitempty"`    // frame cap; 0 = the scene's own
 	CharMM  float64 `json:"charMM,omitempty"` // character height in mm; 0 = the scene's own
 	Font    string  `json:"font,omitempty"`   // CSS font family; empty = Cascadia Mono, Consolas
+	// Frames place each scene's canvas behind the monitors (by scene name),
+	// like Framing does for images.
+	Frames map[string]LiveFrame `json:"frames,omitempty"`
+}
+
+// LiveFrame is how a scene's canvas sits behind the monitors, in the same
+// terms as an image's Frame: cover the monitors' box, then zoom, move (dx,
+// dy as fractions of the canvas), mirror and turn (degrees, clockwise).
+type LiveFrame struct {
+	Zoom   float64 `json:"zoom"`
+	DX     float64 `json:"dx"`
+	DY     float64 `json:"dy"`
+	Rotate float64 `json:"rotate,omitempty"`
+	FlipX  bool    `json:"flipX,omitempty"`
+	FlipY  bool    `json:"flipY,omitempty"`
 }
 
 // SceneName returns the live scene to show.

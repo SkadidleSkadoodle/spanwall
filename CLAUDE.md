@@ -127,9 +127,17 @@ Linux).
     reload it, applying a still wallpaper (apply, next/previous, Wallhaven apply) turns it
     off, the slideshow and day/night schedule pause while it is on. Active scene files are
     polled every 2 s for hot reload. Tray item "Animated wallpaper".
+  - Scene canvas ("world"): `Desk.Box` is the union of the monitors' layout rectangles (as the
+    editor draws them) and `Desk.World` = Box x `live.WorldScale` (1.5). Scenes fill a grid over
+    the world in world mm; `Config.Live.Frames[scene]` places it exactly like an image's Frame
+    (cover Box, zoom, dx/dy, flips, rotate), default zoom 1.5 = 1:1. The page's `makeFrame`
+    turns that into an affine desk->world map (shader uniforms uA, uT); the mask and
+    `g.monitors` boxes are computed in world terms. `/api/live/frame` GET/POST.
   - Editor: "Live" is an entry of the Layout tab's layout dropdown (`live-ui.js`, `live-mode`
-    class swaps the toolbar and editor for the live controls and preview; saved layouts are
-    untouched). Library has a built-in "Live wallpapers" tab: snapshot cards (made by the editor,
+    class trims the toolbar). It is the normal SVG layout editor with the monitors locked and
+    the scene's canvas as the image (a `?snapshot=1&world=1` PNG, `<name>.world.png`, version
+    includes charMM), framed with the image tools and saved per scene; the side panel shows a
+    small live preview, the scene's details and a snapshot picker. Saved layouts are untouched. Library has a built-in "Live wallpapers" tab: snapshot cards (made by the editor,
     `cache\live-thumbs\<name>.png` + `.ver` = scene version), fav/ban as `live:<name>` in
     `Config.Ratings`, Apply, Edit code. Slideshow album "live" steps scenes (`liveStep`,
     PickSlides with fav weight 3); history is cleared when switching to or from it. MCP: sw_live,

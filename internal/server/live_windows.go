@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/SkadidleSkadoodle/spanwall/internal/app"
+	"github.com/SkadidleSkadoodle/spanwall/internal/config"
 	"github.com/SkadidleSkadoodle/spanwall/internal/imageio"
 	"github.com/SkadidleSkadoodle/spanwall/internal/live"
 	"github.com/SkadidleSkadoodle/spanwall/internal/paths"
@@ -264,6 +265,8 @@ func (s *Server) liveRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/live/scene", s.setScene)
 	mux.HandleFunc("POST /api/live/convert", s.liveConvert)
 	mux.HandleFunc("POST /api/live/rate", s.liveRate)
+	mux.HandleFunc("GET /api/live/frame", s.getLiveFrame)
+	mux.HandleFunc("POST /api/live/frame", s.setLiveFrame)
 	mux.HandleFunc("GET /api/live/thumb", s.getLiveThumb)
 	mux.HandleFunc("POST /api/live/thumb", s.setLiveThumb)
 }
@@ -297,8 +300,12 @@ func (s *Server) liveInfo(sess *app.Session) map[string]any {
 	var scenes []map[string]any
 	for _, si := range live.List(web.FS(), scenesDir()) {
 		ver := sceneVersion(si.Name)
+		wver := worldVersion(ver, l.CharMM)
+		_, framed := l.Frames[si.Name]
 		scenes = append(scenes, map[string]any{"name": si.Name, "title": si.Title, "description": si.Description, "builtin": si.Builtin,
-			"user": si.User, "rating": sess.Cfg.Ratings[liveKey(si.Name)], "version": ver, "thumb": thumbFresh(si.Name, ver)})
+			"user": si.User, "rating": sess.Cfg.Ratings[liveKey(si.Name)], "version": ver, "thumb": thumbFresh(si.Name, ver),
+			"worldVersion": wver, "worldThumb": thumbFresh(si.Name+".world", wver), "fps": si.FPS, "charMM": si.CharMM, "framed": framed,
+			"file": si.Name + ".js"})
 	}
 	out := map[string]any{"enabled": l.Enabled, "scene": l.SceneName(), "fps": l.FPS, "charMM": l.CharMM, "font": l.Font,
 		"running": running, "pid": pid, "scenes": scenes, "scenesDir": scenesDir(), "lastLog": lastLog,
@@ -380,25 +387,12 @@ func (s *Server) liveRuntime(w http.ResponseWriter, r *http.Request) {
 		if _, _, err := live.Open(web.FS(), scenesDir(), name+".js"); err != nil {
 			name = "plasma"
 		}
-		ps, err := sess.Placements("")
+		desk, err := liveDesk(sess)
 		if err != nil {
 			return nil, err
 		}
-		ds := sess.Geometry()
-		rects := live.MonitorRects()
-		var ms []live.Monitor
-		for i, m := range sess.Monitors {
-			scr := [4]int{m.DesktopX, m.DesktopY, m.ResW, m.ResH}
-			for _, rc := range rects {
-				if rc[0] == m.DesktopX && rc[1] == m.DesktopY {
-					scr = rc
-				}
-			}
-			ms = append(ms, live.Monitor{ID: m.ID, Name: m.Name, Screen: scr, Display: ds[i], Place: ps[i]})
-		}
-		sort.SliceStable(ms, func(i, j int) bool { return ms[i].Screen[0] < ms[j].Screen[0] })
-		desk := live.Build(int(metric(76)), int(metric(77)), int(metric(78)), int(metric(79)), ms)
-		return map[string]any{"scene": name, "version": sceneVersion(name), "fps": l.FPS, "charMM": l.CharMM, "font": l.Font, "desk": desk}, nil
+		fr, _ := liveFrame(sess.Cfg.Live, name)
+		return map[string]any{"scene": name, "version": sceneVersion(name), "fps": l.FPS, "charMM": l.CharMM, "font": l.Font, "desk": desk, "frame": fr}, nil
 	})
 	if err != nil {
 		writeJSON(w, map[string]string{"error": err.Error()}, nil)
@@ -406,6 +400,94 @@ func (s *Server) liveRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, v, nil)
+}
+
+// liveDesk lays out the monitors of the active layout for the page.
+func liveDesk(sess *app.Session) (live.Desk, error) {
+	ps, err := sess.Placements("")
+	if err != nil {
+		return live.Desk{}, err
+	}
+	ds := sess.Geometry()
+	rects := live.MonitorRects()
+	var ms []live.Monitor
+	for i, m := range sess.Monitors {
+		scr := [4]int{m.DesktopX, m.DesktopY, m.ResW, m.ResH}
+		for _, rc := range rects {
+			if rc[0] == m.DesktopX && rc[1] == m.DesktopY {
+				scr = rc
+			}
+		}
+		ms = append(ms, live.Monitor{ID: m.ID, Name: m.Name, Screen: scr, Display: ds[i], Place: ps[i]})
+	}
+	sort.SliceStable(ms, func(i, j int) bool { return ms[i].Screen[0] < ms[j].Screen[0] })
+	return live.Build(int(metric(76)), int(metric(77)), int(metric(78)), int(metric(79)), ms), nil
+}
+
+// liveFrame is a scene's framing: saved, or the default (its canvas's middle
+// at 1:1 behind the monitors).
+func liveFrame(l config.Live, name string) (config.LiveFrame, bool) {
+	if f, ok := l.Frames[name]; ok && f.Zoom > 0 {
+		return f, true
+	}
+	return config.LiveFrame{Zoom: live.WorldScale}, false
+}
+
+func (s *Server) getLiveFrame(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("scene")
+	v, err := s.session(func(sess *app.Session) (any, error) {
+		if name == "" {
+			name = sess.Cfg.Live.SceneName()
+		}
+		if !live.ValidName(name) {
+			return nil, fmt.Errorf("bad scene name %q", name)
+		}
+		desk, err := liveDesk(sess)
+		if err != nil {
+			return nil, err
+		}
+		fr, saved := liveFrame(sess.Cfg.Live, name)
+		return map[string]any{"scene": name, "width": desk.World[0], "height": desk.World[1], "box": desk.Box, "frame": fr, "saved": saved,
+			"default": config.LiveFrame{Zoom: live.WorldScale}}, nil
+	})
+	writeJSON(w, v, err)
+}
+
+func (s *Server) setLiveFrame(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scene string `json:"scene"`
+		Reset bool   `json:"reset"`
+		config.LiveFrame
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	if !live.ValidName(req.Scene) {
+		writeJSON(w, nil, fmt.Errorf("bad scene name %q", req.Scene))
+		return
+	}
+	_, err := s.session(func(sess *app.Session) (any, error) {
+		l := &sess.Cfg.Live
+		if req.Reset {
+			delete(l.Frames, req.Scene)
+		} else {
+			f := req.LiveFrame
+			if f.Zoom < 0.05 || f.Zoom > 40 {
+				return nil, errors.New("zoom is out of range")
+			}
+			if l.Frames == nil {
+				l.Frames = map[string]config.LiveFrame{}
+			}
+			l.Frames[req.Scene] = f
+		}
+		return nil, sess.Save()
+	})
+	if err == nil {
+		s.liveSend("reload")
+		s.events.publish("live")
+	}
+	writeJSON(w, map[string]any{"saved": err == nil}, err)
 }
 
 func (s *Server) liveReport(w http.ResponseWriter, r *http.Request) {

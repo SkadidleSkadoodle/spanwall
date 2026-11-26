@@ -123,14 +123,31 @@ func thumbDir() string {
 	return d
 }
 
+// worldVersion names a snapshot of a scene's whole canvas, which also
+// changes with the character size.
+func worldVersion(ver string, charMM float64) string { return fmt.Sprintf("%s@%g", ver, charMM) }
+
+// thumbFile is a snapshot's base name: the scene, or "<scene>.world" for
+// its whole canvas (the editor draws that behind the monitors).
+func thumbFile(r *http.Request) (string, bool) {
+	name := r.URL.Query().Get("name")
+	if !live.ValidName(name) {
+		return "", false
+	}
+	if r.URL.Query().Get("kind") == "world" {
+		name += ".world"
+	}
+	return name, true
+}
+
 func thumbFresh(name, ver string) bool {
 	b, err := os.ReadFile(filepath.Join(thumbDir(), name+".ver"))
 	return err == nil && string(b) == ver
 }
 
 func (s *Server) getLiveThumb(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("name")
-	if !live.ValidName(name) {
+	name, ok := thumbFile(r)
+	if !ok {
 		http.Error(w, "bad name", http.StatusBadRequest)
 		return
 	}
@@ -144,8 +161,9 @@ func (s *Server) getLiveThumb(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setLiveThumb(w http.ResponseWriter, r *http.Request) {
-	name, ver := r.URL.Query().Get("name"), r.URL.Query().Get("ver")
-	if !live.ValidName(name) || ver == "" || strings.ContainsAny(ver, "/\\") {
+	name, ok := thumbFile(r)
+	ver := r.URL.Query().Get("ver")
+	if !ok || ver == "" || strings.ContainsAny(ver, "/\\") {
 		writeJSON(w, nil, errors.New("name and ver are required"))
 		return
 	}

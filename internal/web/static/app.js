@@ -123,6 +123,7 @@ function frameDirty() {
 // What the editor shows behind the monitors: one view for a spanned image,
 // or one per span group when the last wallpaper was applied as groups.
 function views() {
+  if (LV.on) return liveViews();
   const img = $("#chkWallpaper").checked && wallpaperPath();
   if (!img) return [];
   const la = S.status && S.status.lastApplied;
@@ -147,6 +148,7 @@ function act() {
 const activeB = () => { const v = act(); return v ? v.b : bbox(); };
 
 async function loadFrame(v) {
+  if (v.live) return liveLoadFrame(v);
   if (S.framesLoading[v.key]) return;
   S.framesLoading[v.key] = true;
   try {
@@ -194,8 +196,9 @@ function bboxOf(ids) {
 function bbox() { return bboxOf(null); }
 
 function fit() {
-  const b = bbox();
+  let b = bbox();
   if (!isFinite(b.w)) return;
+  if (LV.on) b = liveFitBox(b); // show the scene's whole canvas
   const wrap = $("#canvasWrap");
   const aspect = wrap.clientWidth > 0 && wrap.clientHeight > 0 ? wrap.clientWidth / wrap.clientHeight : 1.6;
   const m = Math.max(b.w, b.h) * 0.12 + 40;
@@ -218,7 +221,7 @@ function render() {
   const { x, y, w, h } = S.vb;
   svg.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
   const b = bbox();
-  const img = $("#chkWallpaper").checked && wallpaperPath();
+  const img = LV.on || ($("#chkWallpaper").checked && wallpaperPath());
   let out = `<defs><pattern id="g100" width="100" height="100" patternUnits="userSpaceOnUse"><path d="M100 0H0V100" fill="none" class="gridline"/></pattern>`;
   out += `<clipPath id="mons">`;
   for (const d of S.displays) {
@@ -231,7 +234,7 @@ function render() {
   if (img && isFinite(b.w)) {
     act();
     views().forEach((v, vi) => {
-      const href = "/api/thumb?w=1800&image=" + encodeURIComponent(v.img);
+      const href = v.live ? liveHref(v) : "/api/thumb?w=1800&image=" + encodeURIComponent(v.img);
       // Clip to this view's monitors.
       out += `<clipPath id="mv${vi}">`;
       for (const d of S.displays) {
@@ -381,6 +384,7 @@ function initCanvas() {
       svg.setPointerCapture(e.pointerId);
       return;
     }
+    if (LV.on) return; // the monitors stay put while framing a live scene
     const g = e.target.closest(".mon");
     if (!g) { S.sel = null; render(); return; }
     const id = g.dataset.id;
@@ -555,7 +559,9 @@ function needHTML() {
 }
 
 function renderSide() {
+  if (LV.on) { liveRenderSide(); return; }
   const side = $("#side");
+  if (side.dataset.mode === "live") { side.dataset.mode = ""; side.classList.remove("live-side"); }
   const d = S.sel && disp(S.sel);
   if (!d) { side.innerHTML = needHTML() + `<div class="empty">Select a monitor to edit its position.<br><br>Moving a monitor <b>up</b> here moves the image on it <b>down</b>.</div>`; return; }
   if (side.dataset.for === d.id && side.contains(document.activeElement) && document.activeElement.tagName === "INPUT") {
@@ -654,7 +660,10 @@ function initToolbar() {
   $("#layoutSelect").addEventListener("change", async (e) => {
     const v = e.target.value;
     if (v === LIVE_VALUE) { liveEnter(); return; }
-    if (LV.on) { liveLeave(); if (v === S.view) return; e.target.value = v; }
+    if (LV.on) {
+      if (frameDirty() && !confirm("Discard unsaved changes to the framing?")) { e.target.value = LIVE_VALUE; return; }
+      liveLeave(); if (v === S.view) return; e.target.value = v;
+    }
     if (isDirty() && !confirm("Discard unsaved changes?")) { e.target.value = S.view; return; }
     S.view = e.target.value; S.cur = {};
     await loadLayout();
@@ -689,7 +698,7 @@ function initToolbar() {
     if (S.moveImg) toast("Drag or use the arrow keys to move the wallpaper; drag a corner, scroll or +/- to resize; drag a curved arrow or press [ ] to rotate (H/V mirror). Save & apply to use it.");
     render();
   });
-  $("#btnResetImg").addEventListener("click", () => { act(); if (S.frame) { Object.assign(S.frame, { zoom: 1, dx: 0, dy: 0, flipX: false, flipY: false, rotate: 0 }); render(); } });
+  $("#btnResetImg").addEventListener("click", () => { act(); if (S.frame) { Object.assign(S.frame, { zoom: S.frame.def || 1, dx: 0, dy: 0, flipX: false, flipY: false, rotate: 0 }); render(); } });
   $("#btnAutoImg").addEventListener("click", async () => {
     const v = act();
     if (!v) { toast("Show a wallpaper first (Library: Show in editor, or apply one)", true); return; }
@@ -706,6 +715,7 @@ function initToolbar() {
   $("#btnSave").addEventListener("click", () => save().then(() => toast("Layout saved")).catch(fail));
   $("#btnApply").addEventListener("click", async () => {
     try {
+      if (LV.on) { await save(); toast("Saved: the animation uses this framing now"); return; }
       await save();
       if (S.view !== S.status.activeLayout) await api("/api/layout/action", { action: "activate", name: S.view });
       const la = S.status.lastApplied;
@@ -739,9 +749,11 @@ async function save() {
   for (const k in S.frames) {
     const f = S.frames[k], g = S.framesSaved[k];
     if (!g || !frameDiff(f, g)) continue;
-    await api("/api/framing", Object.assign({ image: f.img, group: f.ids ? f.ids.join(",") : "" }, frameVals(f)));
+    if (f.live) await api("/api/live/frame", Object.assign({ scene: f.scene }, frameVals(f)));
+    else await api("/api/framing", Object.assign({ image: f.img, group: f.ids ? f.ids.join(",") : "" }, frameVals(f)));
     S.framesSaved[k] = frameVals(f);
   }
+  if (LV.on) { render(); return; } // framing a live scene: the layout itself is untouched
   await api("/api/layout/save", { layout: S.view, placements: plain(S.cur) });
   S.saved = clone(S.cur);
   for (const k in S.saved) delete S.saved[k].unplaced;

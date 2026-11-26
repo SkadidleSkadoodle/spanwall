@@ -39,9 +39,20 @@ type Mesh struct {
 // Desk is everything the page needs to draw.
 type Desk struct {
 	Window   [4]int     `json:"window"` // virtual screen x, y, w, h
-	MM       [4]float64 `json:"mm"`     // union of the monitors' boxes, mm
+	MM       [4]float64 `json:"mm"`     // union of the monitors' shapes, mm
 	Monitors []Mesh     `json:"monitors"`
+	// Box is the union of the monitors' layout rectangles (position and
+	// apparent size, as the editor draws them): what a scene's canvas is
+	// framed against, exactly like a spanned image.
+	Box [4]float64 `json:"box"`
+	// World is the scene's canvas in mm: WorldScale times Box, so it can be
+	// moved, turned and zoomed out behind the monitors.
+	World [2]float64 `json:"world"`
 }
+
+// WorldScale is how much bigger than the monitors a scene's canvas is. The
+// default framing (zoom = WorldScale) shows its middle at 1:1.
+const WorldScale = 1.5
 
 // PxToMM returns the map from a monitor's own pixels to desk mm, using the
 // same shapes as static wallpapers: the curved-screen mesh, else the
@@ -97,6 +108,14 @@ func Build(vx, vy, vw, vh int, ms []Monitor) Desk {
 	}
 	if len(ms) > 0 {
 		out.MM = [4]float64{round3(minX), round3(minY), round3(maxX - minX), round3(maxY - minY)}
+		bx0, by0, bx1, by1 := math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)
+		for _, m := range ms {
+			w, h := m.Display.WidthMM*m.Place.S(), m.Display.HeightMM*m.Place.S()
+			bx0, by0 = math.Min(bx0, m.Place.XMM), math.Min(by0, m.Place.YMM)
+			bx1, by1 = math.Max(bx1, m.Place.XMM+w), math.Max(by1, m.Place.YMM+h)
+		}
+		out.Box = [4]float64{round3(bx0), round3(by0), round3(bx1 - bx0), round3(by1 - by0)}
+		out.World = [2]float64{round3(out.Box[2] * WorldScale), round3(out.Box[3] * WorldScale)}
 	}
 	return out
 }

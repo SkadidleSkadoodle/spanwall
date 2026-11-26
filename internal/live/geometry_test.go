@@ -24,6 +24,9 @@ func TestBuildPlain(t *testing.T) {
 	if d.MM != [4]float64{0, 0, 1320, 450} {
 		t.Fatalf("desk = %v", d.MM)
 	}
+	if d.Box != [4]float64{0, 0, 1320, 450} || d.World != [2]float64{1980, 675} {
+		t.Fatalf("box %v world %v", d.Box, d.World)
+	}
 }
 
 func TestBuildQuad(t *testing.T) {

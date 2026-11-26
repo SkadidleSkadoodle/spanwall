@@ -6,7 +6,8 @@
 //   &scene=name       preview another scene than the active one
 
 const Q = new URLSearchParams(location.search);
-const SNAP = Q.has("snapshot"); // the library's scene pictures: render a moment, save a PNG, stop
+const SNAP = Q.has("snapshot");
+const WORLD = SNAP && Q.has("world"); // snapshot of the scene's whole canvas, for the layout editor // the library's scene pictures: render a moment, save a PNG, stop
 const PREVIEW = Q.has("preview") || SNAP;
 let stopped = false;
 const host = document.getElementById("views");
@@ -16,7 +17,7 @@ const PER_ROW = Math.floor(AW / SW), SLOTS = PER_ROW * Math.floor(AH / SH);
 const MAX_CELLS = 400000;
 const DEFAULT_FONT = "'Cascadia Mono', Consolas, 'Courier New', monospace";
 
-let st = null, scene = null, g = null, views = [], raf = 0, timer = 0, failed = null;
+let st = null, scene = null, g = null, FR = null, views = [], raf = 0, timer = 0, failed = null;
 let coveredRects = [], live = [], t0 = performance.now(), next = 0, step = 1000 / 30;
 let stats = { frames: 0, ms: 0 }, readySent = false, loading = null;
 
@@ -55,10 +56,32 @@ function mix(a, b, t) {
 function scale(c, k) { return rgb(((c >> 16) & 255) * k, ((c >> 8) & 255) * k, (c & 255) * k); }
 const cp = (ch) => (typeof ch === "number" ? ch : ch ? ch.codePointAt(0) : 32);
 
-function makeGrid(desk, def) {
+// makeFrame places the scene's canvas (world, mm) behind the monitors the
+// way the editor places an image: cover the monitors' box, zoom, move by
+// dx/dy (fractions of the canvas), mirror, turn clockwise about its centre.
+function makeFrame(desk, f) {
+  f = f || {};
+  const [bx, by, bw, bh] = desk.box, [W, H] = desk.world;
+  const z = f.zoom > 0 ? f.zoom : 1.5;
+  const m = Math.max(bw / W, bh / H) * z, rw = W * m, rh = H * m; // m: desk mm per canvas mm
+  const cx = bx + bw / 2 + (f.dx || 0) * rw, cy = by + bh / 2 + (f.dy || 0) * rh;
+  const a = ((f.rotate || 0) * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a), fx = f.flipX ? -1 : 1, fy = f.flipY ? -1 : 1;
+  // canvas = A * desk + T
+  const A = [(fx * c) / m, (fx * sn) / m, (-fy * sn) / m, (fy * c) / m]; // row-major
+  const T = [W / 2 - (A[0] * cx + A[1] * cy), H / 2 - (A[2] * cx + A[3] * cy)];
+  return {
+    m, W, H, A, T,
+    toWorld: (x, y) => [A[0] * x + A[1] * y + T[0], A[2] * x + A[3] * y + T[1]],
+    toDesk(wx, wy) { const ex = (wx - W / 2) * m * fx, ey = (wy - H / 2) * m * fy; return [cx + c * ex - sn * ey, cy + sn * ex + c * ey]; },
+  };
+}
+
+function makeGrid(desk, def, F) {
   let ch = st.charMM || (def.cell && def.cell.h) || 4.2;
   const aspect = (def.cell && def.cell.aspect) || 0.55;
-  const [x0, y0, w, h] = desk.mm;
+  // ch is in canvas mm: at the default framing (1:1) that is its size on the
+  // monitors, and zooming the canvas zooms the characters with it.
+  const w = F.W, h = F.H, x0 = 0, y0 = 0;
   while (Math.ceil(w / (ch * aspect)) * Math.ceil(h / ch) > MAX_CELLS) ch *= 1.1;
   const cw = ch * aspect, cols = Math.ceil(w / cw), rows = Math.ceil(h / ch), n = cols * rows;
   const G = {
@@ -82,16 +105,18 @@ function makeGrid(desk, def) {
     cell: (xmm, ymm) => [Math.floor((xmm - x0) / cw), Math.floor((ymm - y0) / ch)],
     rgb, hsl, mix, scale, hash, rand, noise,
   };
-  // which cells are on a monitor, and each monitor's cell box
+  if (WORLD) G.mask.fill(1); // the whole canvas is drawn
+  // which cells land on a monitor, and each monitor's cell box, in canvas terms
   for (const m of desk.monitors) {
-    const poly = outline(m);
-    const [bx, by, bw, bh] = m.box;
-    const c0 = Math.max(0, Math.floor((bx - x0) / cw)), r0 = Math.max(0, Math.floor((by - y0) / ch));
-    const c1 = Math.min(cols - 1, Math.floor((bx + bw - x0) / cw)), r1 = Math.min(rows - 1, Math.floor((by + bh - y0) / ch));
-    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
-      if (inside(poly, x0 + (c + 0.5) * cw, y0 + (r + 0.5) * ch)) G.mask[r * cols + c] = 1;
+    const poly = outline(m).map(([x, y]) => F.toWorld(x, y));
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    for (const [x, y] of poly) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y); }
+    const c0 = Math.max(0, Math.floor(bx0 / cw)), r0 = Math.max(0, Math.floor(by0 / ch));
+    const c1 = Math.min(cols - 1, Math.floor(bx1 / cw)), r1 = Math.min(rows - 1, Math.floor(by1 / ch));
+    if (!WORLD) for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      if (inside(poly, (c + 0.5) * cw, (r + 0.5) * ch)) G.mask[r * cols + c] = 1;
     }
-    G.monitors.push({ id: m.id, name: m.name, primary: !!m.primary, x: bx, y: by, w: bw, h: bh, c0, r0, c1, r1, cc: ((c0 + c1) / 2) | 0, cr: ((r0 + r1) / 2) | 0 });
+    G.monitors.push({ id: m.id, name: m.name, primary: !!m.primary, x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0, c0, r0, c1, r1, cc: ((c0 + c1) / 2) | 0, cr: ((r0 + r1) / 2) | 0 });
   }
   G.main = G.monitors.find((m) => m.primary) || G.monitors.reduce((a, b) => (!a || b.w * b.h > a.w * a.h ? b : a), null) || { c0: 0, r0: 0, c1: cols - 1, r1: rows - 1, cc: cols >> 1, cr: rows >> 1 };
   return G;
@@ -179,11 +204,11 @@ void main(){ vMM = aMM; gl_Position = vec4(aPx.x / uWin.x * 2.0 - 1.0, 1.0 - aPx
 const FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
 in vec2 vMM; out vec4 o;
-uniform vec2 uOrigin, uCell; uniform ivec2 uGrid; uniform vec3 uBack; uniform float uDim;
+uniform vec2 uOrigin, uCell, uT; uniform mat2 uA; uniform ivec2 uGrid; uniform vec3 uBack; uniform float uDim;
 uniform usampler2D uGlyph; uniform sampler2D uFg, uBg, uAtlas;
 uniform vec2 uAtlasSize, uSlot; uniform float uPad; uniform int uPerRow;
 void main(){
-  vec2 g = (vMM - uOrigin) / uCell;
+  vec2 g = (uA * vMM + uT - uOrigin) / uCell; // desk mm -> the scene's canvas -> cells
   ivec2 c = ivec2(floor(g));
   if (c.x < 0 || c.y < 0 || c.x >= uGrid.x || c.y >= uGrid.y) { o = vec4(uBack * uDim, 1.0); return; }
   int s = int(texelFetch(uGlyph, c, 0).r);
@@ -211,7 +236,7 @@ function makeView(x, y, w, h, meshes, i) {
   const p = gl.createProgram();
   gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uGrid", "uBack", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow"]) u[n] = gl.getUniformLocation(p, n);
+  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uA", "uT", "uGrid", "uBack", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow"]) u[n] = gl.getUniformLocation(p, n);
   const tex = (filter) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === gl.NEAREST ? gl.NEAREST : gl.LINEAR);
@@ -246,6 +271,12 @@ function dropViews() {
 
 function buildViews(desk) {
   dropViews();
+  if (WORLD) { // the canvas, flat: corners mapped back to desk mm so the same shader draws it
+    const w = 2048, h = Math.round((2048 * FR.H) / FR.W);
+    const mm = [[0, 0], [FR.W, 0], [0, FR.H], [FR.W, FR.H]].flatMap(([x, y]) => FR.toDesk(x, y));
+    views.push(makeView(0, 0, w, h, [{ nx: 2, ny: 2, px: [0, 0, w, 0, 0, h, w, h], mm }], -1));
+    return;
+  }
   if (PREVIEW) { // the whole desk, flat: dimmed behind, the monitors at full brightness
     const w = Math.round(innerWidth * devicePixelRatio), h = Math.round(innerHeight * devicePixelRatio);
     const [x, y, dw, dh] = desk.mm, k = Math.min(w / dw, h / dh), ox = (w - dw * k) / 2, oy = (h - dh * k) / 2;
@@ -292,6 +323,7 @@ function drawView(v, G) {
   if (v.i < 0) { gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); } // a monitor's mesh covers its whole canvas
   gl.useProgram(v.p);
   gl.uniform2f(u.uWin, v.w, v.h); gl.uniform2f(u.uOrigin, G.x0, G.y0); gl.uniform2f(u.uCell, G.cw, G.ch);
+  const A = FR.A; gl.uniformMatrix2fv(u.uA, false, [A[0], A[2], A[1], A[3]]); gl.uniform2f(u.uT, FR.T[0], FR.T[1]); // column-major
   gl.uniform2i(u.uGrid, G.cols, G.rows); gl.uniform3f(u.uBack, ((back >> 16) & 255) / 255, ((back >> 8) & 255) / 255, (back & 255) / 255);
   gl.uniform2f(u.uAtlasSize, AW, AH); gl.uniform2f(u.uSlot, SW, SH); gl.uniform1f(u.uPad, PAD); gl.uniform1i(u.uPerRow, PER_ROW);
   [v.tGlyph, v.tFg, v.tBg, v.tAtlas].forEach((t, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, t); });
@@ -331,7 +363,8 @@ async function load() {
   const font = st.font || scene.font || DEFAULT_FONT;
   try { await document.fonts.load(`48px ${font}`); } catch (e) { /* fall back */ }
   setFont(font);
-  g = makeGrid(st.desk, scene);
+  FR = makeFrame(st.desk, st.frame);
+  g = makeGrid(st.desk, scene, FR);
   buildViews(st.desk);
   for (const v of views) sizeView(v, g);
   live = st.desk.monitors.map(() => true); applyCovered();
@@ -350,11 +383,11 @@ async function load() {
 }
 
 function snapshot() {
-  const name = st.scene, ver = st.version;
-  const done = (ok) => { stopped = true; try { parent.postMessage({ snapshot: name, ok }, location.origin); } catch (e) { /* not in a frame */ } };
+  const name = st.scene, ver = WORLD ? `${st.version}@${st.charMM || 0}` : st.version; // matches the server's worldVersion
+  const done = (ok) => { stopped = true; try { parent.postMessage({ snapshot: name, world: WORLD, ok }, location.origin); } catch (e) { /* not in a frame */ } };
   views[0].cv.toBlob((b) => {
     if (!b) return done(false);
-    fetch(`/api/live/thumb?name=${encodeURIComponent(name)}&ver=${encodeURIComponent(ver)}`, { method: "POST", body: b })
+    fetch(`/api/live/thumb?name=${encodeURIComponent(name)}&ver=${encodeURIComponent(ver)}${WORLD ? "&kind=world" : ""}`, { method: "POST", body: b })
       .then((r) => done(r.ok)).catch(() => done(false));
   }, "image/png");
 }

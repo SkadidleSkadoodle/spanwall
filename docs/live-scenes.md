@@ -6,8 +6,10 @@ as still wallpapers, so characters are the same physical size everywhere and lin
 bezels. It pauses itself when windows cover the monitors, when the PC is locked and when the
 displays are off.
 
-In the editor, pick **Live** in the Layout tab's layout dropdown for the animation's controls
-and a preview of the whole desk. Every scene is also in **Library > Live wallpapers**, with a
+In the editor, pick **Live** in the Layout tab's layout dropdown. The scene's canvas (1.5 times
+the size of your monitors) sits behind the monitors like a spanned image: drag it, zoom it,
+turn and mirror it, then Save & apply. The side panel shows a live preview, the scene's
+details, and snapshots of every scene to switch between. Every scene is also in **Library > Live wallpapers**, with a
 snapshot, favourites and bans; choose the **Live wallpapers** album to let the slideshow
 shuffle scenes. The tray ("Animated wallpaper") and Claude (`sw_live`) can turn it on too.
 Choosing a still wallpaper turns it off.
@@ -36,7 +38,7 @@ export default {
 | | |
 |---|---|
 | `g.cols`, `g.rows`, `g.n` | grid size |
-| `g.cw`, `g.ch` | cell size in mm; `g.x0`, `g.y0`, `g.width`, `g.height` the desk in mm |
+| `g.cw`, `g.ch` | cell size in mm; `g.x0`, `g.y0`, `g.width`, `g.height` the scene's canvas in mm (1.5 times the monitors; its middle is what the monitors show by default) |
 | `g.chars`, `g.fg`, `g.bg` | `Uint32Array`s, index `r * cols + c`: code point, `0xRRGGBB`, background (`0` none, else `0xFF000000 \| colour`; set `g.bgUsed = true` if you write it directly) |
 | `g.mask` | `1` where the cell is on a monitor (skip the rest to save time) |
 | `g.put(c, r, ch, fg, bg)`, `g.text(c, r, str, fg, bg)`, `g.clear(ch, fg, bg)` | drawing |

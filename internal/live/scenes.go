@@ -27,16 +27,20 @@ func ValidName(name string) bool { return nameRE.MatchString(name) }
 
 // SceneInfo describes a scene for lists.
 type SceneInfo struct {
-	Name        string `json:"name"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Builtin     bool   `json:"builtin,omitempty"` // ships with Spanwall
-	User        bool   `json:"user,omitempty"`    // in the user's scenes folder (overrides a built-in)
+	Name        string  `json:"name"`
+	Title       string  `json:"title"`
+	Description string  `json:"description,omitempty"`
+	FPS         int     `json:"fps,omitempty"`     // the scene's own frame rate
+	CharMM      float64 `json:"charMM,omitempty"`  // the scene's own character height
+	Builtin     bool    `json:"builtin,omitempty"` // ships with Spanwall
+	User        bool    `json:"user,omitempty"`    // in the user's scenes folder (overrides a built-in)
 }
 
 var (
 	titleRE = regexp.MustCompile(`(?m)^\s*name:\s*"([^"]*)"`)
 	descRE  = regexp.MustCompile(`(?m)^\s*description:\s*"([^"]*)"`)
+	fpsRE   = regexp.MustCompile(`(?m)^\s*fps:\s*(\d+)`)
+	cellRE  = regexp.MustCompile(`(?m)^\s*cell:\s*\{\s*h:\s*([\d.]+)`)
 	playRE  = regexp.MustCompile(`player\([^,]+,\s*(\{.*\})\)`)
 )
 
@@ -47,6 +51,12 @@ func describe(name string, src []byte) SceneInfo {
 	}
 	if m := descRE.FindSubmatch(src); m != nil {
 		si.Description = string(m[1])
+	}
+	if m := fpsRE.FindSubmatch(src); m != nil {
+		fmt.Sscan(string(m[1]), &si.FPS)
+	}
+	if m := cellRE.FindSubmatch(src); m != nil {
+		fmt.Sscan(string(m[1]), &si.CharMM)
 	}
 	if m := playRE.FindSubmatch(src); m != nil { // converted clips keep their options as JSON
 		var o struct{ Name, Description string }
