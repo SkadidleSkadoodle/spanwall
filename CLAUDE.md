@@ -97,8 +97,10 @@ Linux).
     static wallpapers use (`PxToMM`). `convert.go` GIF/image frames -> ASCII clip (chars +
     base64 RGB per cell). `scenes.go` scene files: built-ins in `web/static/live/scenes`, the
     user's in `.spanwall\scenes` (win on a name clash, `_*.js` are helpers, `*.clip.json` clips).
-  - The page `web/static/live/runtime.js`: ONE WebGL2 canvas over the whole virtual screen;
-    the scene fills a desk-mm character grid (typed arrays); a fragment shader maps each pixel
+  - The page `web/static/live/runtime.js`: one page over the whole virtual screen with one
+    WebGL2 canvas per monitor (only screen area is drawn and composited; a covered monitor is
+    skipped entirely and catches up when shown). The scene runs once and fills a desk-mm
+    character grid (typed arrays); a fragment shader maps each pixel
     to mm through the monitor's mesh, looks up the cell's glyph/colour textures and samples a
     glyph atlas (40x72 slots, 4 px padding, mip level <= 2; block and shade characters fill
     their slot so neighbours join). Frames paced by setTimeout then rAF (no 240 Hz wakeups);
@@ -109,7 +111,9 @@ Linux).
     process). Window: on 24H2+ ("raised desktop", Progman has WS_EX_NOREDIRECTIONBITMAP) a
     WS_EX_LAYERED child of Progman placed after SHELLDLL_DefView with the shell's WorkerW kept
     at the bottom (Microsoft's guidance quoted in Lively's WinDesktopCore.cs); older builds:
-    child of the WorkerW behind the icons. Created hidden; shown when the page posts "ready".
+    child of the WorkerW behind the icons. Created hidden; shown when the page posts "ready"
+    (it draws its first frame without rAF, since a hidden WebView gets none), then IsVisible is
+    toggled because WebView2 doesn't notice its parent being shown.
     Every 1 s: health (exit 3 if Explorer took the window away; the server restarts it),
     resize to Progman, coverage (a visible, uncloaked, opaque, non-tool window covering >= 90% of a
     monitor; a full-screen D3D game, SHQueryUserNotificationState 3, covers all) -> `spanwall.covered()`
@@ -124,7 +128,13 @@ Linux).
     polled every 2 s for hot reload. Tray item "Animated wallpaper". MCP: sw_live,
     sw_live_scene, sw_live_convert.
   - `tools/livedev`: serves the page with a made-up desk (any OS) to work on scenes.
-  - Measured spike (3 monitors, full-grid redraw at 30 fps): ~4% CPU, ~30% GPU, ~830 MB.
+  - Measured on the owner's 3 monitors (22 threads), uncovered, whole grid redrawn each frame:
+    plasma 20 fps 0.55% CPU / ~13% GPU 3D, starfield 30 fps 0.7% / ~17%, rain 20 fps 0.8% /
+    ~14%, clock 0.03% / 0.5%; ~0.65% GPU per frame per second, independent of GPU preference.
+    Covered, locked or displays off: 0% / 0%. RAM ~600-750 MB (WebView2), 0 when off.
+    `SPANWALL_LIVE_IGNORE_COVER=1` makes a host draw under windows, for measuring.
+  - Chrome/Brave/Edge full-screen video reports QUNS_RUNNING_D3D_FULL_SCREEN like a game; only
+    non-browser full-screen windows pause every monitor.
 
 ## Rules
 
