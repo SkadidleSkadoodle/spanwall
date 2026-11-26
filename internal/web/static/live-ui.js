@@ -18,7 +18,7 @@ async function liveLoad() {
   $("#liveScene").value = st.scene;
   $("#liveFps").value = String(st.fps || 0);
   $("#liveChar").value = st.charMM || "";
-  $("#liveChar").placeholder = "scene's";
+  $("#liveChar").placeholder = "auto";
   $("#liveDir").textContent = st.scenesDir;
   const p = st.page;
   $("#liveStats").textContent = st.enabled && p ? (p.error ? "Scene error: " + p.error : `${p.fps ?? "?"} fps, ${p.ms ?? "?"} ms a frame, ${p.cols}×${p.rows} characters`) : "";
@@ -41,7 +41,6 @@ function liveShowSel() {
   if (LV.active && f.dataset.src !== src + LV.st.scenes.length) { f.dataset.src = src + LV.st.scenes.length; f.src = src; }
 }
 
-function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 
 async function liveSet(body, msg) {
   LV.st = await api("/api/live", body);
