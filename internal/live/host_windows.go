@@ -427,6 +427,10 @@ func (h *host) updateVisible() {
 
 // ---- coverage ---------------------------------------------------------------------
 
+// ignoreCover (SPANWALL_LIVE_IGNORE_COVER=1) keeps drawing under windows,
+// for measuring the cost of a scene.
+var ignoreCover = os.Getenv("SPANWALL_LIVE_IGNORE_COVER") != ""
+
 var browserClasses = map[string]bool{"Chrome_WidgetWin_1": true, "Chrome_WidgetWin_0": true, "MozillaWindowClass": true, "ApplicationFrameWindow": true}
 
 var pGetForegroundWindow = user32.NewProc("GetForegroundWindow")
@@ -442,6 +446,9 @@ var shellClasses = map[string]bool{"Progman": true, "WorkerW": true, "Shell_Tray
 // game), as [x, y, w, h] rects.
 func coverage() (mons []rect, covered [][4]int32, why []string) {
 	mons, _ = enumMonitors()
+	if ignoreCover {
+		return mons, nil, nil
+	}
 	reason := make([]string, len(mons))
 	cov := make([]bool, len(mons))
 	var qs uint32
