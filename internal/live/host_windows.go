@@ -92,14 +92,6 @@ func className(h uintptr) string {
 	return windows.UTF16ToString(b)
 }
 
-var pGetWindowTextW = user32.NewProc("GetWindowTextW")
-
-func windowText(h uintptr) string {
-	b := make([]uint16, 80)
-	pGetWindowTextW.Call(h, uintptr(unsafe.Pointer(&b[0])), 80)
-	return windows.UTF16ToString(b)
-}
-
 func winRect(h uintptr) rect {
 	var r rect
 	pGetWindowRect.Call(h, uintptr(unsafe.Pointer(&r)))
@@ -519,7 +511,7 @@ func coverage() (mons []rect, covered [][4]int32, why []string) {
 				return 1
 			}
 			cov[best] = true
-			reason[best] = fmt.Sprintf("%s %q %.2f %v on %v", className(w), windowText(w), frac, r, mons[best])
+			reason[best] = fmt.Sprintf("%s %.0f%%", className(w), frac*100) // window titles stay out of the log
 			return 1
 		})
 		pEnumWindows.Call(ecb, 0)
