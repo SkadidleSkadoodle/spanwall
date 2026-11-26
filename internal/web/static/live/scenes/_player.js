@@ -7,7 +7,13 @@ export default function player(file, opts = {}) {
     fps: opts.fps || 30,
     cell: { h: opts.charMM || 4.2 },
     background: opts.background || "#000000",
-    async setup(g) {
+    params: {
+      fit: { label: "Fit", type: "select", options: ["cover", "contain"], default: opts.fit === "contain" ? "contain" : "cover" },
+      speed: { label: "Speed", type: "range", min: 0.25, max: 3, step: 0.05, default: 1 },
+      mono: { label: "One colour", type: "toggle", default: false },
+      color: { label: "Colour (one colour)", type: "color", default: "#b8f5c8" },
+    },
+    async setup() {
       this.clip = null;
       const res = await fetch(new URL(file, import.meta.url).href, { cache: "no-store" });
       const clip = await res.json();
@@ -16,18 +22,18 @@ export default function player(file, opts = {}) {
       this.clip = clip; this.last = -1;
     },
     draw(g, t) {
-      const clip = this.clip;
+      const clip = this.clip, P = g.params;
       if (!clip) return false;
-      let ms = (t * 1000) % clip.total, k = 0;
+      let ms = (t * 1000 * P.speed) % clip.total, k = 0;
       while (k < clip.frames.length - 1 && ms >= clip.frames[k].ms) ms -= clip.frames[k++].ms;
-      if (k === this.last) return false;
-      this.last = k;
-      const f = clip.frames[k], rgb = clip.rgb[k], { cols, rows, chars, fg } = g;
-      // fit the clip on the desk: "cover" fills every monitor, "contain" shows all of it
+      if (k === this.last && this.pv === g.paramsVersion) return false;
+      this.last = k; this.pv = g.paramsVersion;
+      const f = clip.frames[k], rgb = P.mono ? null : clip.rgb[k], { cols, rows, chars, fg } = g;
+      // fit the clip on the canvas: "cover" fills it, "contain" shows all of it
       const sx = clip.cols / cols, sy = clip.rows / rows;
-      const s = opts.fit === "contain" ? Math.max(sx, sy) : Math.min(sx, sy);
+      const s = P.fit === "contain" ? Math.max(sx, sy) : Math.min(sx, sy);
       const ox = (clip.cols - cols * s) / 2, oy = (clip.rows - rows * s) / 2;
-      const tint = opts.color === undefined ? 0xb8f5c8 : opts.color;
+      const tint = parseInt(String(P.color).slice(1), 16) || 0xb8f5c8;
       for (let r = 0; r < rows; r++) {
         const sr = Math.floor(oy + r * s);
         for (let c = 0; c < cols; c++) {

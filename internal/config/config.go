@@ -80,6 +80,21 @@ type Live struct {
 	// Frames place each scene's canvas behind the monitors (by scene name),
 	// like Framing does for images.
 	Frames map[string]LiveFrame `json:"frames,omitempty"`
+	// Params are each scene's settings (by scene name): the options the
+	// scene declares, plus _theme, _tintA, _tintB and _charset, which any
+	// scene takes.
+	Params map[string]map[string]any `json:"params,omitempty"`
+	// Schedule shows one scene by day and another at night, switching like
+	// the still wallpapers' day and night (sunrise and sunset, or Windows'
+	// light and dark mode).
+	Schedule LiveSchedule `json:"schedule"`
+}
+
+// LiveSchedule is the animation's day and night scenes.
+type LiveSchedule struct {
+	Enabled bool   `json:"enabled"`
+	Day     string `json:"day,omitempty"`
+	Night   string `json:"night,omitempty"`
 }
 
 // LiveFrame is how a scene's canvas sits behind the monitors, in the same

@@ -148,6 +148,15 @@ Linux).
     ~14%, clock 0.03% / 0.5%; ~0.65% GPU per frame per second, independent of GPU preference.
     Covered, locked or displays off: 0% / 0%. RAM ~600-750 MB (WebView2), 0 when off.
     `SPANWALL_LIVE_IGNORE_COVER=1` makes a host draw under windows, for measuring.
+  - Editor: `#liveBg` is the page in `?editor=1` mode behind the SVG; the editor posts `view`
+    (viewBox + frame) and `params`, the page posts `hello`, `scene` (params schema) and `error`
+    (message + line; syntax errors via a module-script onerror). Dragging posts the frame as a
+    preview (`/api/live/frame` preview:true -> host stdin `frame <json>`, no reload).
+  - Settings: scene `params` declarations, saved in `Config.Live.Params[scene]` (`/api/live/params`,
+    host stdin `params <json>`); `_theme`/`_tintA`/`_tintB` tint on the GPU, `_charset` remaps
+    glyphs by measured density. Duplicate: `/api/live/duplicate` (copies code, frame, params).
+    Day/night: `Config.Live.Schedule` (`liveScheduleStep` in the slideshow loop via modePeriod).
+    Data scenes: weather (Open-Meteo), system (`/api/live/stats`).
   - Chrome/Brave/Edge full-screen video reports QUNS_RUNNING_D3D_FULL_SCREEN like a game; only
     non-browser full-screen windows pause every monitor.
 

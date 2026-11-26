@@ -230,7 +230,7 @@ function render() {
     out += q ? `<polygon points="${quadPts(q)}"/>` : `<rect x="${p.xMM}" y="${p.yMM}" width="${W(d)}" height="${Hh(d)}"/>`;
   }
   out += `</clipPath></defs>`;
-  out += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#g100)"/>`;
+  if (!LV.on) out += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#g100)"/>`; // live: the scene runs behind, in #liveBg
   if (img && isFinite(b.w)) {
     act();
     views().forEach((v, vi) => {
@@ -247,6 +247,7 @@ function render() {
       const f = S.frames[v.key];
       if (!f) {
         loadFrame(v);
+        if (v.live) return;
         out += `<image href="${href}" x="${v.b.x0}" y="${v.b.y0}" width="${v.b.w}" height="${v.b.h}" preserveAspectRatio="xMidYMid slice" opacity="0.16"/>`;
         out += `<image href="${href}" x="${v.b.x0}" y="${v.b.y0}" width="${v.b.w}" height="${v.b.h}" preserveAspectRatio="xMidYMid slice" clip-path="url(#mv${vi})"/>`;
         return;
@@ -257,8 +258,10 @@ function render() {
       const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rot = f.rotate || 0;
       const tf = f.flipX || f.flipY || rot ? ` transform="translate(${cx} ${cy}) rotate(${rot}) scale(${f.flipX ? -1 : 1} ${f.flipY ? -1 : 1}) translate(${-cx} ${-cy})"` : "";
       const a = `href="${href}" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" preserveAspectRatio="none"${tf}`;
-      out += `<image ${a} opacity="${S.moveImg && active ? 0.4 : 0.16}"/>`;
-      out += `<g clip-path="url(#mv${vi})"><image ${a}/></g>`;
+      if (!v.live) {
+        out += `<image ${a} opacity="${S.moveImg && active ? 0.4 : 0.16}"/>`;
+        out += `<g clip-path="url(#mv${vi})"><image ${a}/></g>`;
+      }
       if (S.moveImg && active) {
         // Outline and handles turn with the image.
         const turn = (x, y) => turnPt(x, y, cx, cy, rot);
@@ -311,6 +314,7 @@ function render() {
   svg.innerHTML = out;
   updateDirty();
   renderSide();
+  if (LV.on) liveAfterRender();
 }
 
 function svgPoint(evt) {
@@ -688,6 +692,7 @@ function initToolbar() {
   $("#btnRevert").addEventListener("click", () => {
     S.cur = clone(S.saved);
     for (const k in S.frames) if (S.framesSaved[k]) Object.assign(S.frames[k], S.framesSaved[k]);
+    if (LV.on) livePushFrame(true);
     fit(); render(); calibrateSoon();
   });
   $("#btnMoveImg").addEventListener("click", () => {

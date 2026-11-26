@@ -15,25 +15,41 @@ export default {
   fps: 30,                       // frame cap (the user can override)
   cell: { h: 4.2, aspect: 0.55 }, // character height in mm, width/height
   background: "#05070a",
+  params: {                      // optional settings, shown as controls in the editor and saved per scene
+    speed: { label: "Speed", type: "range", min: 0.1, max: 3, step: 0.1, default: 1 },
+    color: { label: "Colour", type: "color", default: "#33ff66" },
+    trails: { label: "Trails", type: "toggle", default: true },
+    style: { label: "Style", type: "select", options: ["a", "b"], default: "a" },
+    city: { label: "City", type: "text", default: "" },
+  },
   setup(g) {},                   // optional, once per grid (may be async)
   draw(g, t, dt) {},             // fill the grid; t = seconds since start. Return false when nothing changed (skips the GPU upload)
+  paramsChanged(g) {},           // optional: settings changed (g.params updated, g.paramsVersion bumped)
 };
 
 g: cols, rows, n, cw, ch (cell mm), x0, y0, width, height (desk mm). Typed arrays indexed i = r*cols + c: g.chars (Uint32 code points; 32 = blank), g.fg (0xRRGGBB), g.bg (0 = none, else 0xFF000000|0xRRGGBB; set g.bgUsed = true if you write it directly), g.mask (1 where the cell is on a monitor: skip the rest to save time).
 Helpers: g.put(c, r, ch, fg, bg), g.text(c, r, str, fg, bg), g.clear(ch=32, fg, bg), g.ramp(v0to1, chars=" .:-=+*#%@") -> code point, g.rgb(r,g,b), g.hsl(hTurns, s, l), g.mix(a, b, t), g.scale(color, k), g.noise(x, y, z) (smooth 0..1), g.hash(x, y) (0..1), g.rand(seed) -> () => 0..1, g.mm(c, r) -> [x, y] mm, g.cell(xmm, ymm) -> [c, r].
-g.monitors: [{id, name, primary, x, y, w, h (mm box), c0, r0, c1, r1 (cell box), cc, cr (centre cell)}]; g.main is the Windows primary monitor: centre focal things (clocks, logos) on it. g.preview is true in the editor's preview.
+g.params: the settings (defaults merged with saved values); g.paramsVersion changes when they do (rebuild palettes then). Colour themes and character sets are applied by Spanwall to any scene (params _theme, _charset), so scenes don't implement them.
+g.width/g.height are the scene's canvas (1.5x the monitors' box; the user frames it like an image, so draw over the whole canvas and centre on g.width/2, g.height/2 or g.main).
+g.monitors: [{id, name, primary, x, y, w, h (canvas mm box), c0, r0, c1, r1 (cell box), cc, cr (centre cell)}]; g.main is the Windows primary monitor: centre focal things (clocks, logos) on it. g.preview is true in the editor. g.location is {lat, lon} from Spanwall's day and night settings, if set.
+Helpers in ./_font.js: import { big, textWidth } from "./_font.js"; big(g, "12:30", c, r, px, py, color) draws 5x7 block digits/letters. Data: fetch("/api/live/stats") gives {cpu, memPercent, memUsed, memTotal (GB), uptimeSec, battery?}; scenes may fetch public HTTPS APIs (e.g. Open-Meteo).
 Performance: one draw per frame for the whole desk (~100k cells); avoid per-cell allocations and closures, precompute palettes into Uint32Arrays in setup, use mm-based maths (c*g.cw, r*g.ch) so patterns are the same physical size on every monitor. Full blocks (█ ▀ ▄ ▌ ▐) and shades (░ ▒ ▓) join seamlessly; any Unicode character works. Keep everything deterministic in t where you can.
 A scene that throws shows its error on screen and in sw_live status (page.error); fix and rewrite it.`
 
 func registerLive(s *mcp.Server) {
 	type liveIn struct {
-		Action string   `json:"action,omitempty" jsonschema:"status (default), on, off, set, or rate"`
-		Rating string   `json:"rating,omitempty" jsonschema:"rate: fav, ban or none for the scene (favourites come up more in the live slideshow album, banned never)"`
-		Scene  string   `json:"scene,omitempty" jsonschema:"scene name (with on or set); see the scenes list in status"`
-		FPS    *int     `json:"fps,omitempty" jsonschema:"frame cap 1-60, 0 = the scene's own (with set or on)"`
-		CharMM *float64 `json:"charMM,omitempty" jsonschema:"character height in mm, 0 = the scene's own (with set or on)"`
+		Action string         `json:"action,omitempty" jsonschema:"status (default), on, off, set, rate, settings, duplicate or schedule"`
+		Rating string         `json:"rating,omitempty" jsonschema:"rate: fav, ban or none for the scene (favourites come up more in the live slideshow album, banned never)"`
+		Params map[string]any `json:"params,omitempty" jsonschema:"settings: the scene's own settings by key, plus _theme (phosphor, amber, ice, mono, synthwave, ocean, blood, custom with _tintA/_tintB hex), _charset (ascii, blocks, braille, katakana, binary, dots, lines); empty resets"`
+		Name   string         `json:"name,omitempty" jsonschema:"duplicate: the copy's name"`
+		Day    string         `json:"day,omitempty" jsonschema:"schedule: the day scene"`
+		Night  string         `json:"night,omitempty" jsonschema:"schedule: the night scene"`
+		On     *bool          `json:"on,omitempty" jsonschema:"schedule: switch day and night scenes on or off"`
+		Scene  string         `json:"scene,omitempty" jsonschema:"scene name (with on or set); see the scenes list in status"`
+		FPS    *int           `json:"fps,omitempty" jsonschema:"frame cap 1-60, 0 = the scene's own (with set or on)"`
+		CharMM *float64       `json:"charMM,omitempty" jsonschema:"character height in mm, 0 = the scene's own (with set or on)"`
 	}
-	add(s, "sw_live", "Animated ASCII wallpaper behind the desktop icons, spanning every monitor by the physical layout: status (scenes list, whether it runs, the page's fps and errors), on, off, or set the scene, frame rate and character size. It pauses itself whenever windows cover the monitors. Choosing a still wallpaper turns it off. The slideshow album \"live\" (sw_slideshow source=live) shuffles scenes; rate scenes fav or ban like wallpapers.",
+	add(s, "sw_live", "Animated ASCII wallpaper behind the desktop icons, spanning every monitor by the physical layout: status (scenes list, whether it runs, the page's fps and errors), on, off, or set the scene, frame rate and character size. It pauses itself whenever windows cover the monitors. Choosing a still wallpaper turns it off. The slideshow album \"live\" (sw_slideshow source=live) shuffles scenes; rate scenes fav or ban like wallpapers. Each scene has settings (its own, plus colour theme and character set), day and night scenes can switch automatically, and duplicate copies a scene to edit as the user's own.",
 		func(in liveIn) (*mcp.CallToolResult, error) {
 			body := map[string]any{}
 			if in.Scene != "" {
@@ -55,6 +71,13 @@ func registerLive(s *mcp.Server) {
 				return postJSON("/api/live", body)
 			case "rate":
 				return postJSON("/api/live/rate", map[string]any{"name": in.Scene, "rating": in.Rating})
+			case "settings":
+				return postJSON("/api/live/params", map[string]any{"scene": in.Scene, "params": in.Params})
+			case "duplicate":
+				return postJSON("/api/live/duplicate", map[string]any{"from": in.Scene, "name": in.Name})
+			case "schedule":
+				on := in.On == nil || *in.On
+				return postJSON("/api/live", map[string]any{"schedule": map[string]any{"enabled": on, "day": in.Day, "night": in.Night}})
 			}
 			return nil, fmt.Errorf("unknown action %q", in.Action)
 		})

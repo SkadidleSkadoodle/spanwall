@@ -104,6 +104,9 @@ func (s *Server) slideStep(back bool) (any, error) {
 // slideshowLoop changes the wallpaper when the slideshow is due.
 func (s *Server) slideshowLoop() {
 	for range time.Tick(20 * time.Second) {
+		if s.liveOn() && s.liveScheduleStep() {
+			continue // day and night scenes are in charge
+		}
 		live := s.liveAlbum()
 		if s.liveOn() && !live {
 			continue // the animation is showing; changing the still wallpaper under it is wasted work

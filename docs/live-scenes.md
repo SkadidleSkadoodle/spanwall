@@ -19,7 +19,8 @@ Choosing a still wallpaper turns it off.
 Scenes are small JavaScript modules in `%USERPROFILE%\.spanwall\scenes\<name>.js`. Edit one
 in the editor ("Edit code"), in any editor (the wallpaper reloads when the file changes), or
 ask Claude to write one (`sw_live_scene`). The built-in scenes (plasma, matrix, starfield,
-clock, donut) are good starting points.
+clock, donut, weather, system) are good starting points. **Duplicate** (side panel or
+Library card) copies a scene under a new name so you can edit it as your own.
 
 ```js
 export default {
@@ -27,7 +28,15 @@ export default {
   fps: 30,                        // frame cap (the Live view can override)
   cell: { h: 4.2, aspect: 0.55 }, // character height in mm, width / height
   background: "#05070a",
+  params: {                       // optional settings, shown as controls in the Live view
+    speed: { label: "Speed", type: "range", min: 0.1, max: 3, step: 0.1, default: 1 },
+    color: { label: "Colour", type: "color", default: "#33ff66" },
+    trails: { label: "Trails", type: "toggle", default: true },
+    style: { label: "Style", type: "select", options: ["a", "b"], default: "a" },
+    city: { label: "City", type: "text", default: "" },
+  },
   setup(g) {},                    // optional, once per grid (may be async)
+  paramsChanged(g) {},            // optional, after the settings change
   draw(g, t, dt) {},              // fill the grid; t = seconds since start
                                   // return false when nothing changed
 };
@@ -46,12 +55,25 @@ export default {
 | `g.rgb`, `g.hsl(h, s, l)` (h in turns), `g.mix`, `g.scale` | colours |
 | `g.noise(x, y, z)`, `g.hash(x, y)`, `g.rand(seed)` | smooth noise, hashing, a seeded random function |
 | `g.mm(c, r)`, `g.cell(x, y)` | cell centre in mm, cell at a point in mm |
+| `g.params`, `g.paramsVersion` | the settings (defaults merged with saved values); the version changes when they do |
+| `g.location` | `{lat, lon}` from Spanwall's day and night settings, if set |
 | `g.monitors`, `g.main` | each monitor's mm box and cell box (`c0, r0, c1, r1`, centre `cc, cr`); `g.main` is the Windows primary monitor |
 
 Tips: precompute palettes into `Uint32Array`s in `setup`, avoid allocating per cell, and
 work in mm (`c * g.cw`, `r * g.ch`) so a pattern is the same size on every monitor. Full
 blocks (`█ ▀ ▄ ▌ ▐`) and shades (`░ ▒ ▓`) join without gaps. A scene that throws shows its
-error on the wallpaper and in the Live view.
+error on the wallpaper and in the Live view; the code editor shows the line and jumps to it.
+
+Every scene also gets a **colour theme** (phosphor, amber, ice, mono, synthwave, ocean, blood
+or two custom colours) and a **character set** (ASCII, blocks, Braille, katakana, binary, dots,
+lines), applied on the GPU and by glyph density, so scenes don't implement them.
+
+Data: `fetch("/api/live/stats")` gives `{cpu, memPercent, memUsed, memTotal, uptimeSec, battery}`;
+scenes may also fetch public HTTPS APIs (the weather scene uses Open-Meteo). `./_font.js`
+exports `big(g, text, c, r, px, py, color)` for 5x7 block lettering.
+
+**Day and night**: the Live view can switch between a day scene and a night scene, using
+Spanwall's sunrise and sunset (or Windows light and dark mode) setting.
 
 ## From a GIF, video or picture
 

@@ -3,12 +3,15 @@
 // characters line up across bezels. One page covers every monitor.
 //   /live/            the wallpaper (inside Spanwall's window behind the icons)
 //   /live/?preview=1  the whole desk, flat, for the editor
-//   &scene=name       preview another scene than the active one
+//   /live/?editor=1   the scene's whole canvas animated behind the layout editor
+//                     (framing and settings come from the editor by postMessage)
+//   &scene=name       another scene than the active one
 
 const Q = new URLSearchParams(location.search);
 const SNAP = Q.has("snapshot");
-const WORLD = SNAP && Q.has("world"); // snapshot of the scene's whole canvas, for the layout editor // the library's scene pictures: render a moment, save a PNG, stop
-const PREVIEW = Q.has("preview") || SNAP;
+const WORLD = SNAP && Q.has("world"); // snapshot of the scene's whole canvas
+const EDITOR = Q.has("editor"); // behind the layout editor
+const PREVIEW = Q.has("preview") || SNAP || EDITOR; // not the wallpaper: no reports
 let stopped = false;
 const host = document.getElementById("views");
 
@@ -20,6 +23,7 @@ const DEFAULT_FONT = "'Cascadia Mono', Consolas, 'Courier New', monospace";
 let st = null, scene = null, g = null, FR = null, views = [], raf = 0, timer = 0, failed = null;
 let coveredRects = [], live = [], t0 = performance.now(), next = 0, step = 1000 / 30;
 let stats = { frames: 0, ms: 0 }, readySent = false, loading = null;
+let EV = { vb: null }; // editor mode: the editor's viewBox (desk mm shown)
 
 // ---- grid: what scenes see ---------------------------------------------------
 
@@ -87,7 +91,7 @@ function makeGrid(desk, def, F) {
   const G = {
     cols, rows, n, cw, ch, x0, y0, width: w, height: h,
     chars: new Uint32Array(n).fill(32), fg: new Uint32Array(n).fill(0xffffff), bg: new Uint32Array(n), mask: new Uint8Array(n),
-    bgUsed: false, monitors: [], main: null, preview: PREVIEW,
+    bgUsed: false, monitors: [], main: null, preview: PREVIEW, params: {}, paramsVersion: 0, location: st.location || null,
     idx: (c, r) => r * cols + c,
     put(c, r, chr, fg, bg) {
       if (c < 0 || r < 0 || c >= cols || r >= rows) return;
@@ -105,21 +109,28 @@ function makeGrid(desk, def, F) {
     cell: (xmm, ymm) => [Math.floor((xmm - x0) / cw), Math.floor((ymm - y0) / ch)],
     rgb, hsl, mix, scale, hash, rand, noise,
   };
-  if (WORLD) G.mask.fill(1); // the whole canvas is drawn
-  // which cells land on a monitor, and each monitor's cell box, in canvas terms
+  placeMonitors(G, desk, F);
+  return G;
+}
+
+// placeMonitors works out which cells land on a monitor (the mask: scenes
+// can skip the rest) and each monitor's cell box, for the current framing.
+function placeMonitors(G, desk, F) {
+  const { cols, rows, cw, ch } = G;
+  G.mask.fill(WORLD || EDITOR ? 1 : 0); // the canvas view and the editor show the whole canvas
+  G.monitors = [];
   for (const m of desk.monitors) {
     const poly = outline(m).map(([x, y]) => F.toWorld(x, y));
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
     for (const [x, y] of poly) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y); }
     const c0 = Math.max(0, Math.floor(bx0 / cw)), r0 = Math.max(0, Math.floor(by0 / ch));
     const c1 = Math.min(cols - 1, Math.floor(bx1 / cw)), r1 = Math.min(rows - 1, Math.floor(by1 / ch));
-    if (!WORLD) for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    if (!WORLD && !EDITOR) for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
       if (inside(poly, (c + 0.5) * cw, (r + 0.5) * ch)) G.mask[r * cols + c] = 1;
     }
     G.monitors.push({ id: m.id, name: m.name, primary: !!m.primary, x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0, c0, r0, c1, r1, cc: ((c0 + c1) / 2) | 0, cr: ((r0 + r1) / 2) | 0 });
   }
   G.main = G.monitors.find((m) => m.primary) || G.monitors.reduce((a, b) => (!a || b.w * b.h > a.w * a.h ? b : a), null) || { c0: 0, r0: 0, c1: cols - 1, r1: rows - 1, cc: cols >> 1, cr: rows >> 1 };
-  return G;
 }
 
 function outline(m) { // boundary of a monitor's mesh, in mm
@@ -182,15 +193,90 @@ function mapGlyphs(G) {
   const ch = G.chars, out = glyphs, ascii = A.ascii;
   let lastC = -1, lastS = 0;
   for (let i = 0; i < G.n; i++) {
-    const c = ch[i];
+    let c = ch[i];
     if (c !== lastC) {
       lastC = c;
+      if (CS) c = remap(c);
       if (c === 32 || c === 0) lastS = 0;
       else if (c < 128) { lastS = ascii[c]; if (lastS < 0) lastS = addGlyph(c); }
       else { lastS = A.map.get(c); if (lastS === undefined) lastS = addGlyph(c); }
     }
     out[i] = lastS;
   }
+}
+
+// ---- character sets: draw any scene with other characters of the same density --------
+
+const CHARSETS = {
+  ascii: " .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+  blocks: " ░▒▓█",
+  braille: "⠀⠁⠃⠇⡇⡏⡟⡿⣿⠂⠆⠖⠶⠷⠿",
+  katakana: " ･ｰｧｨｩｪｫｬｭｮｯｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ",
+  binary: " 01",
+  dots: " .·•●",
+  lines: " ·-─=═┼╬█",
+};
+let CS = null; // the active set: { cps, dens } sorted by density, plus a cache
+const densCache = new Map();
+function density(code) { // share of the cell the glyph inks
+  if (densCache.has(code)) return densCache.get(code);
+  const c = density.c || (density.c = Object.assign(document.createElement("canvas"), { width: 24, height: 40 }).getContext("2d", { willReadFrequently: true }));
+  c.fillStyle = "#000"; c.fillRect(0, 0, 24, 40);
+  c.fillStyle = "#fff"; c.textAlign = "center"; c.textBaseline = "middle"; c.font = `32px ${A.font}`;
+  c.fillText(String.fromCodePoint(code), 12, 21);
+  const d = c.getImageData(0, 0, 24, 40).data;
+  let sum = 0;
+  for (let k = 0; k < d.length; k += 4) sum += d[k];
+  const v = sum / (255 * 24 * 40);
+  densCache.set(code, v);
+  return v;
+}
+function setCharset(name) {
+  const chars = CHARSETS[name];
+  if (!chars) { CS = null; return; }
+  const cps = [...new Set(Array.from(chars, (c) => c.codePointAt(0)))].map((c) => [c, c === 32 || c === 0x2800 ? 0 : density(c)]).sort((a, b) => a[1] - b[1]);
+  const max = cps[cps.length - 1][1] || 1;
+  CS = { cps: cps.map((x) => x[0]), dens: cps.map((x) => x[1] / max), ref: density(64) || 0.3, map: new Map() };
+}
+function remap(code) {
+  if (code === 32 || code === 0) return code;
+  let m = CS.map.get(code);
+  if (m === undefined) {
+    const v = Math.min(1, density(code) / CS.ref); // how dark this glyph is, '@' = 1
+    let best = 0;
+    for (let k = 1; k < CS.dens.length; k++) if (Math.abs(CS.dens[k] - v) < Math.abs(CS.dens[best] - v)) best = k;
+    m = v > 0.02 && CS.cps[best] === 32 ? CS.cps[Math.min(1, CS.cps.length - 1)] : CS.cps[best];
+    CS.map.set(code, m);
+  }
+  return m;
+}
+
+// ---- colour themes: tint any scene on the GPU -----------------------------------------
+
+const THEMES = { // dark and bright ends of the tint
+  phosphor: ["#03260f", "#b8ffcb"], amber: ["#2a1200", "#ffd27a"], ice: ["#061a2e", "#e0f6ff"],
+  mono: ["#151515", "#ffffff"], synthwave: ["#2b1055", "#ff7ad9"], ocean: ["#021d2e", "#5ef2d6"], blood: ["#1e0000", "#ff5a4a"],
+};
+let theme = null; // [[r,g,b],[r,g,b]] 0..1, or null for the scene's own colours
+const hex3 = (h) => { const v = parseColor(h, 0); return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]; };
+
+// ---- per-scene settings ------------------------------------------------------------------
+
+// applyParams sets the scene's settings (declared defaults, overridden by
+// saved values) and the ones every scene takes: _theme, _tintA, _tintB, _charset.
+function applyParams(values) {
+  values = values || {};
+  const out = {}, decl = (scene && scene.params) || {};
+  for (const [k, d] of Object.entries(decl)) out[k] = d && "default" in d ? d.default : undefined;
+  Object.assign(out, values);
+  if (g) { g.params = out; g.paramsVersion++; }
+  const t = values._theme;
+  theme = t === "custom" ? [hex3(values._tintA || "#0a3d2a"), hex3(values._tintB || "#c8ffe0")] : THEMES[t] ? THEMES[t].map(hex3) : null;
+  const before = CS;
+  setCharset(values._charset);
+  if (before !== CS) glyphs = new Uint16Array(0); // map every cell again
+  for (const v of views) { v.dirty = true; v.stale = true; }
+  return out;
 }
 
 // ---- views: one WebGL canvas each ------------------------------------------------------
@@ -204,7 +290,7 @@ void main(){ vMM = aMM; gl_Position = vec4(aPx.x / uWin.x * 2.0 - 1.0, 1.0 - aPx
 const FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
 in vec2 vMM; out vec4 o;
-uniform vec2 uOrigin, uCell, uT; uniform mat2 uA; uniform ivec2 uGrid; uniform vec3 uBack; uniform float uDim;
+uniform vec2 uOrigin, uCell, uT; uniform mat2 uA; uniform ivec2 uGrid; uniform vec3 uBack, uTintA, uTintB; uniform float uDim; uniform int uTheme;
 uniform usampler2D uGlyph; uniform sampler2D uFg, uBg, uAtlas;
 uniform vec2 uAtlasSize, uSlot; uniform float uPad; uniform int uPerRow;
 void main(){
@@ -219,7 +305,9 @@ void main(){
   vec2 uv = (base + fract(g) * inner) / uAtlasSize;
   vec2 k = inner / uAtlasSize;
   float a = s == 0 ? 0.0 : textureGrad(uAtlas, uv, dFdx(g) * k, dFdy(g) * k).r;
-  o = vec4(mix(back, fg.bgr, a) * uDim, 1.0);
+  vec3 ink = fg.bgr;
+  if (uTheme == 1) ink = mix(uTintA, uTintB, clamp(dot(ink, vec3(0.299, 0.587, 0.114)) * 1.3, 0.0, 1.0));
+  o = vec4(mix(back, ink, a) * uDim, 1.0);
 }`;
 
 // makeView puts a canvas at x, y (window pixels), w x h, drawing meshes
@@ -236,7 +324,7 @@ function makeView(x, y, w, h, meshes, i) {
   const p = gl.createProgram();
   gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uA", "uT", "uGrid", "uBack", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow"]) u[n] = gl.getUniformLocation(p, n);
+  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uA", "uT", "uGrid", "uBack", "uTintA", "uTintB", "uTheme", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow"]) u[n] = gl.getUniformLocation(p, n);
   const tex = (filter) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === gl.NEAREST ? gl.NEAREST : gl.LINEAR);
@@ -247,21 +335,40 @@ function makeView(x, y, w, h, meshes, i) {
     atlasVersion: -1, stale: true, dirty: true, meshes: [] };
   gl.bindTexture(gl.TEXTURE_2D, v.tAtlas); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 2);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // grid rows are any width
+  setMeshes(v, meshes);
+  return v;
+}
+
+// setMeshes (re)loads a view's meshes [{nx, ny, px, mm, dim}].
+function setMeshes(v, meshes) {
+  const gl = v.gl, p = v.p;
+  for (const m of v.meshes) { gl.deleteVertexArray(m.vao); gl.deleteBuffer(m.vb); gl.deleteBuffer(m.ib); }
+  v.meshes = [];
   const aPx = gl.getAttribLocation(p, "aPx"), aMM = gl.getAttribLocation(p, "aMM");
   for (const m of meshes) {
-    const n = m.nx * m.ny, vb = new Float32Array(n * 4);
-    for (let k = 0; k < n; k++) vb.set([m.px[2 * k], m.px[2 * k + 1], m.mm[2 * k], m.mm[2 * k + 1]], 4 * k);
+    const n = m.nx * m.ny, data = new Float32Array(n * 4);
+    for (let k = 0; k < n; k++) data.set([m.px[2 * k], m.px[2 * k + 1], m.mm[2 * k], m.mm[2 * k + 1]], 4 * k);
     const idx = [];
     for (let j = 0; j < m.ny - 1; j++) for (let q = 0; q < m.nx - 1; q++) { const a = j * m.nx + q; idx.push(a, a + 1, a + m.nx, a + 1, a + m.nx + 1, a + m.nx); }
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, vb, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(aPx); gl.vertexAttribPointer(aPx, 2, gl.FLOAT, false, 16, 0);
     gl.enableVertexAttribArray(aMM); gl.vertexAttribPointer(aMM, 2, gl.FLOAT, false, 16, 8);
     gl.bindVertexArray(null);
-    v.meshes.push({ vao, count: idx.length, dim: m.dim || 1 });
+    v.meshes.push({ vao, vb, ib, count: idx.length, dim: m.dim || 1 });
   }
-  return v;
+  v.dirty = true;
+}
+
+// editorMeshes: the whole canvas dimmed, the monitors bright, placed by the
+// editor's viewBox (desk mm) in this frame's pixels.
+function editorMeshes(v) {
+  if (!EV.vb) return [];
+  const { x, y, w, h } = EV.vb, k = Math.min(v.w / w, v.h / h), ox = (v.w - w * k) / 2, oy = (v.h - h * k) / 2;
+  const px = (mm) => mm.map((val, j) => (j % 2 ? oy + (val - y) * k : ox + (val - x) * k));
+  const world = [[0, 0], [FR.W, 0], [0, FR.H], [FR.W, FR.H]].flatMap(([a, b]) => FR.toDesk(a, b));
+  return [{ nx: 2, ny: 2, px: px(world), mm: world, dim: 0.4 }, ...st.desk.monitors.map((m) => ({ nx: m.nx, ny: m.ny, px: px(m.mm), mm: m.mm }))];
 }
 
 function dropViews() {
@@ -275,6 +382,11 @@ function buildViews(desk) {
     const w = 2048, h = Math.round((2048 * FR.H) / FR.W);
     const mm = [[0, 0], [FR.W, 0], [0, FR.H], [FR.W, FR.H]].flatMap(([x, y]) => FR.toDesk(x, y));
     views.push(makeView(0, 0, w, h, [{ nx: 2, ny: 2, px: [0, 0, w, 0, 0, h, w, h], mm }], -1));
+    return;
+  }
+  if (EDITOR) {
+    const v = makeView(0, 0, Math.round(innerWidth * devicePixelRatio), Math.round(innerHeight * devicePixelRatio), [], -1);
+    views.push(v); setMeshes(v, editorMeshes(v));
     return;
   }
   if (PREVIEW) { // the whole desk, flat: dimmed behind, the monitors at full brightness
@@ -325,6 +437,8 @@ function drawView(v, G) {
   gl.uniform2f(u.uWin, v.w, v.h); gl.uniform2f(u.uOrigin, G.x0, G.y0); gl.uniform2f(u.uCell, G.cw, G.ch);
   const A = FR.A; gl.uniformMatrix2fv(u.uA, false, [A[0], A[2], A[1], A[3]]); gl.uniform2f(u.uT, FR.T[0], FR.T[1]); // column-major
   gl.uniform2i(u.uGrid, G.cols, G.rows); gl.uniform3f(u.uBack, ((back >> 16) & 255) / 255, ((back >> 8) & 255) / 255, (back & 255) / 255);
+  gl.uniform1i(u.uTheme, theme ? 1 : 0);
+  if (theme) { gl.uniform3fv(u.uTintA, theme[0]); gl.uniform3fv(u.uTintB, theme[1]); }
   gl.uniform2f(u.uAtlasSize, AW, AH); gl.uniform2f(u.uSlot, SW, SH); gl.uniform1f(u.uPad, PAD); gl.uniform1i(u.uPerRow, PER_ROW);
   [v.tGlyph, v.tFg, v.tBg, v.tAtlas].forEach((t, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, t); });
   gl.uniform1i(u.uGlyph, 0); gl.uniform1i(u.uFg, 1); gl.uniform1i(u.uBg, 2); gl.uniform1i(u.uAtlas, 3);
@@ -359,17 +473,21 @@ async function load() {
     const mod = await import(`/live/scenes/${encodeURIComponent(st.scene)}.js?v=${st.version}`);
     scene = mod.default || mod;
     if (typeof scene.draw !== "function") throw new Error("the scene has no draw(g, t, dt) function");
-  } catch (e) { scene = { draw() { return false; } }; failed = e; }
+  } catch (e) { scene = { draw() { return false; } }; failed = e; failed.line = await syntaxLine(st.scene, st.version); }
   const font = st.font || scene.font || DEFAULT_FONT;
   try { await document.fonts.load(`48px ${font}`); } catch (e) { /* fall back */ }
   setFont(font);
+  if (EDITOR && EV.frame) st.frame = EV.frame;
+  if (EDITOR && EV.params) st.params = EV.params;
   FR = makeFrame(st.desk, st.frame);
   g = makeGrid(st.desk, scene, FR);
+  applyParams(st.params);
   buildViews(st.desk);
   for (const v of views) sizeView(v, g);
   live = st.desk.monitors.map(() => true); applyCovered();
   step = 1000 / Math.max(1, Math.min(60, st.fps || scene.fps || 30));
   if (!failed && scene.setup) { try { await scene.setup(g); } catch (e) { failed = e; } }
+  if (EDITOR) tell({ type: "scene", scene: st.scene, params: (scene && scene.params) || {}, values: st.params || {}, cols: g.cols, rows: g.rows });
   if (failed) showError(failed);
   else report({ loaded: true, monitors: live.length, visible: live.filter(Boolean).length, views: views.length });
   // Draw the first frame now: the window stays hidden (and gets no animation
@@ -392,14 +510,38 @@ function snapshot() {
   }, "image/png");
 }
 
+// errorLine finds the scene's line in an error's stack.
+function errorLine(e) {
+  if (e && e.line) return e.line;
+  const m = new RegExp(`/live/scenes/${st.scene}\\.js[^:\\s]*:(\\d+):(\\d+)`).exec((e && e.stack) || "");
+  return m ? +m[1] : 0;
+}
+
+// syntaxLine finds where a scene that doesn't even load breaks: a module
+// script with a syntax error reports its line to window.onerror.
+function syntaxLine(name, ver) {
+  return new Promise((resolve) => {
+    const el = document.createElement("script"), done = (n) => { removeEventListener("error", onErr); el.remove(); resolve(n); };
+    const onErr = (ev) => { if (ev.filename && ev.filename.includes(`/live/scenes/${name}.js`)) { ev.preventDefault(); done(ev.lineno || 0); } };
+    addEventListener("error", onErr);
+    el.type = "module"; el.src = `/live/scenes/${encodeURIComponent(name)}.js?v=${ver}&check=${Date.now()}`;
+    el.onload = () => done(0);
+    document.head.appendChild(el);
+    setTimeout(() => done(0), 3000);
+  });
+}
+
+function tell(msg) { try { if (parent !== window) parent.postMessage(msg, location.origin); } catch (e) { /* no editor */ } }
+
 function showError(e) {
-  const msg = String((e && e.message) || e).slice(0, 300);
+  const msg = String((e && e.message) || e).slice(0, 300), line = errorLine(e);
   g.clear(32, 0xffffff);
   const m = g.main;
-  g.text(m.c0 + 2, m.r0 + 2, `Scene "${st.scene}" failed:`, 0xff6b6b);
-  msg.split("\n").forEach((line, k) => g.text(m.c0 + 2, m.r0 + 4 + k, line, 0xffd0d0));
+  g.text(m.c0 + 2, m.r0 + 2, `Scene "${st.scene}" failed${line ? " at line " + line : ""}:`, 0xff6b6b);
+  msg.split("\n").forEach((l, k) => g.text(m.c0 + 2, m.r0 + 4 + k, l, 0xffd0d0));
   render(true);
-  report({ error: msg });
+  report({ error: msg, line });
+  tell({ type: "error", scene: st.scene, message: msg, line });
 }
 
 // Frames are paced by a timer, then drawn in the next animation frame, so a
@@ -449,7 +591,36 @@ function applyCovered() {
 window.spanwall = {
   reload() { if (!loading) loading = load().catch((e) => report({ error: String(e) })).finally(() => (loading = null)); },
   covered(rects) { coveredRects = rects || []; applyCovered(); },
+  // framing changed (dragged in the editor, or saved): no reload, the scene keeps running
+  setFrame(m) {
+    if (!st || !g || (m.scene && m.scene !== st.scene)) return;
+    st.frame = m.frame; FR = makeFrame(st.desk, m.frame); placeMonitors(g, st.desk, FR);
+    if (EDITOR) for (const v of views) setMeshes(v, editorMeshes(v));
+    for (const v of views) v.dirty = true;
+    render(false); schedule();
+  },
+  setParams(m) {
+    if (!st || !g || (m.scene && m.scene !== st.scene)) return;
+    st.params = m.params; applyParams(m.params);
+    if (!failed && scene.paramsChanged) { try { scene.paramsChanged(g); } catch (e) { failed = e; showError(e); } }
+    render(true); schedule();
+  },
 };
+// the layout editor drives the editor mode: its view, the framing being dragged, settings
+addEventListener("message", (e) => {
+  if (!EDITOR || e.origin !== location.origin || !e.data) return;
+  const d = e.data;
+  if (d.type === "view") {
+    EV.vb = d.vb;
+    if (d.frame) { EV.frame = d.frame; if (st) window.spanwall.setFrame({ frame: d.frame }); }
+    for (const v of views) setMeshes(v, editorMeshes(v));
+    if (g) { render(false); schedule(); }
+  } else if (d.type === "params") {
+    EV.params = d.params;
+    window.spanwall.setParams({ params: d.params });
+  }
+});
 document.addEventListener("visibilitychange", () => { for (const v of views) v.dirty = true; schedule(); });
 if (PREVIEW) addEventListener("resize", () => window.spanwall.reload());
+if (EDITOR) tell({ type: "hello" });
 window.spanwall.reload();

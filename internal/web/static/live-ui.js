@@ -1,33 +1,37 @@
-// Live (animated ASCII) wallpaper in the editor: "Live" in the Layout tab's
-// dropdown shows the scene's canvas behind the monitors (which stay put) to
-// move, zoom and turn like an image, with a side panel to pick scenes; the
-// Library has a Live wallpapers folder.
+// Live (animated ASCII) wallpaper in the editor. "Live" in the Layout tab's
+// dropdown is the layout editor with the monitors locked: the scene's whole
+// canvas runs behind them (#liveBg, the page in editor mode), framed with the
+// image tools, and framing changes show on the desktop as you drag. The side
+// panel has the scene's details, its settings, its look (colour theme,
+// character set), day and night scenes, and a snapshot picker. The Library
+// has a Live wallpapers folder.
 const LIVE_VALUE = "__live";
-const LV = { st: null, scenes: [], on: false, code: null, snapQ: [], snapping: null, previewKey: "", moveWas: false };
+const LV = { st: null, scenes: [], on: false, code: null, snapQ: [], snapping: null, moveWas: false,
+  schema: {}, vals: {}, err: {}, bgKey: "", viewPending: false, pushTimer: 0, saveTimer: 0, lastPush: "" };
+
+const THEME_NAMES = [["", "Scene's own colours"], ["phosphor", "Green phosphor"], ["amber", "Amber"], ["ice", "Ice"], ["mono", "Mono"],
+  ["synthwave", "Synthwave"], ["ocean", "Ocean"], ["blood", "Blood"], ["custom", "Custom…"]];
+const CHARSET_NAMES = [["", "Scene's own characters"], ["ascii", "ASCII"], ["blocks", "Blocks ░▒▓█"], ["braille", "Braille ⣿"],
+  ["katakana", "Katakana ｱ"], ["binary", "Binary 01"], ["dots", "Dots ·•●"], ["lines", "Lines ─┼╬"]];
 
 const liveOption = () => `<option value="${LIVE_VALUE}" ${LV.on ? "selected" : ""}>Live</option>`;
 const liveScene = (name) => LV.scenes.find((s) => s.name === name) || null;
 const liveCur = () => (LV.st ? liveScene(LV.st.scene) : null);
+const bgFrame = () => $("#liveBg");
+const tellBg = (msg) => { const f = bgFrame(); if (f && f.contentWindow) f.contentWindow.postMessage(msg, location.origin); };
 
 async function liveLoadScenes() {
   try { LV.st = await api("/api/live"); LV.scenes = LV.st.scenes || []; } catch (e) { LV.scenes = []; }
   return LV.st;
 }
 
-// ---- the Live view: the layout editor with the scene's canvas as the image ----------
+// ---- the Live view ---------------------------------------------------------------------
 
 function liveViews() {
   const name = LV.st && LV.st.scene;
   return name ? [{ key: "live:" + name, live: true, scene: name, img: null, ids: null, b: bbox() }] : [];
 }
-
-// The editor draws a snapshot of the scene's whole canvas (made on demand).
-function liveHref(v) {
-  const s = liveScene(v.scene);
-  if (s && s.worldThumb) return `/api/live/thumb?name=${encodeURIComponent(s.name)}&kind=world&v=${encodeURIComponent(s.worldVersion)}`;
-  liveSnap(v.scene, true, true);
-  return "";
-}
+const liveHref = () => "";
 
 async function liveLoadFrame(v) {
   if (S.framesLoading[v.key]) return;
@@ -38,6 +42,7 @@ async function liveLoadFrame(v) {
     S.frames[v.key] = { live: true, scene: v.scene, w: r.width, h: r.height, def: r.default.zoom,
       zoom: f.zoom, dx: f.dx || 0, dy: f.dy || 0, flipX: !!f.flipX, flipY: !!f.flipY, rotate: f.rotate || 0 };
     S.framesSaved[v.key] = frameVals(S.frames[v.key]);
+    LV.lastPush = JSON.stringify(S.framesSaved[v.key]);
   } catch (e) { S.framesLoading[v.key] = false; return; }
   fit(); render();
 }
@@ -59,6 +64,43 @@ function liveForgetFrames() {
   for (const k of Object.keys(S.frames)) if (k.startsWith("live:")) { delete S.frames[k]; delete S.framesSaved[k]; S.framesLoading[k] = false; }
 }
 
+// The background frame: the page in editor mode, for the current scene.
+function liveSetBg(scene) {
+  const wrap = $("#canvasWrap");
+  let f = bgFrame();
+  if (!scene || !$("#tab-layout").classList.contains("active")) { if (f) f.remove(); LV.bgKey = ""; return; }
+  const s = liveScene(scene), key = scene + "@" + (s ? s.version : "");
+  if (f && key === LV.bgKey) return;
+  LV.bgKey = key;
+  if (!f) { f = document.createElement("iframe"); f.id = "liveBg"; f.title = "Live scene"; wrap.insertBefore(f, wrap.firstChild); }
+  f.src = `/live/?editor=1&scene=${encodeURIComponent(scene)}`;
+}
+
+// After each editor render: the background follows the view and the framing
+// (next animation frame), and the desktop follows the framing (throttled).
+function liveAfterRender() {
+  if (!LV.viewPending) {
+    LV.viewPending = true;
+    requestAnimationFrame(() => { LV.viewPending = false; liveSendView(); });
+  }
+  const f = S.frames["live:" + (LV.st && LV.st.scene)];
+  if (f && JSON.stringify(frameVals(f)) !== LV.lastPush && !LV.pushTimer) LV.pushTimer = setTimeout(() => { LV.pushTimer = 0; livePushFrame(); }, 120);
+}
+
+function liveSendView() {
+  const f = S.frames["live:" + (LV.st && LV.st.scene)];
+  tellBg({ type: "view", vb: S.vb, frame: f ? frameVals(f) : null });
+}
+
+function livePushFrame() {
+  const f = S.frames["live:" + (LV.st && LV.st.scene)];
+  if (!f) return;
+  const vals = frameVals(f), key = JSON.stringify(vals);
+  if (key === LV.lastPush) return;
+  LV.lastPush = key;
+  api("/api/live/frame", Object.assign({ scene: f.scene, preview: true }, vals)).catch(() => {});
+}
+
 async function liveEnter() {
   LV.on = true;
   try { localStorage.setItem("spanwall.liveView", "1"); } catch (e) { /* ignore */ }
@@ -75,15 +117,18 @@ async function liveEnter() {
 }
 
 function liveLeave() {
+  // unsaved framing: put the desktop back as saved
+  const f = S.frames["live:" + (LV.st && LV.st.scene)], saved = f && S.framesSaved["live:" + f.scene];
+  if (f && saved && frameDiff(f, saved)) { Object.assign(f, saved); livePushFrame(); }
   LV.on = false;
   try { localStorage.removeItem("spanwall.liveView"); } catch (e) { /* ignore */ }
   $("#tab-layout").classList.remove("live-mode");
   $("#liveCode").classList.add("hidden");
   liveForgetFrames();
   S.moveImg = LV.moveWas;
-  $("#btnResetImg").textContent = "Reset image";
   $("#canvas").classList.toggle("moving-img", S.moveImg);
-  liveSetPreview("");
+  $("#btnResetImg").textContent = "Reset image";
+  liveSetBg("");
   $("#layoutSelect").value = S.view;
   fit(); render();
 }
@@ -91,7 +136,7 @@ function liveLeave() {
 function liveTab(active) {
   if (!LV.on) return;
   if (active) liveRefresh();
-  else liveSetPreview("");
+  else liveSetBg("");
 }
 
 function liveRefresh() {
@@ -103,7 +148,9 @@ function liveRefresh() {
   $("#liveFps").value = String(st.fps || 0);
   $("#liveChar").value = st.charMM || "";
   $("#liveChar").placeholder = "auto";
-  if (LV.on) { if (S.displays && S.displays.length) { fit(); render(); } }
+  if (!LV.on) return;
+  liveSetBg(st.scene);
+  if (S.displays && S.displays.length) { fit(); render(); }
 }
 
 async function liveSet(body, msg) {
@@ -121,37 +168,73 @@ async function livePick(name) {
   await liveSet({ scene: name });
 }
 
-// ---- side panel: a small live preview, the scene's details, and a picker -------------
+// ---- settings ---------------------------------------------------------------------------
 
-function liveSetPreview(scene, force) {
-  const f = $("#liveSidePreview");
-  if (!f) { LV.previewKey = ""; return; }
-  const s = liveScene(scene);
-  const key = scene ? scene + "@" + (s ? s.version : "") : "";
-  if (key === LV.previewKey && !force) return;
-  LV.previewKey = key;
-  f.src = scene && $("#tab-layout").classList.contains("active") ? `/live/?preview=1&scene=${encodeURIComponent(scene)}` : "about:blank";
+// The scene's settings: its declared defaults, then what was saved, then edits.
+function liveValues(name) {
+  if (!LV.vals[name]) LV.vals[name] = Object.assign({}, (LV.st && LV.st.params && LV.st.params[name]) || {});
+  return LV.vals[name];
 }
+
+function liveParamChanged(name) {
+  const vals = liveValues(name);
+  tellBg({ type: "params", params: vals }); // the editor's view at once
+  clearTimeout(LV.saveTimer);
+  LV.saveTimer = setTimeout(() => api("/api/live/params", { scene: name, params: vals }).catch(fail), 350); // saved, and on the desktop
+}
+
+function liveSettingsHTML(name) {
+  const sc = LV.schema[name], vals = liveValues(name);
+  const ctl = (k, d) => {
+    const v = k in vals ? vals[k] : d.default, label = esc(d.label || k), id = `lp-${k}`;
+    switch (d.type) {
+      case "range": return `<label class="set" for="${id}"><span>${label}</span><b>${esc(v)}</b><input id="${id}" type="range" data-lp="${esc(k)}" min="${d.min ?? 0}" max="${d.max ?? 1}" step="${d.step ?? 0.01}" value="${esc(v)}"></label>`;
+      case "color": return `<label class="set" for="${id}"><span>${label}</span><input id="${id}" type="color" data-lp="${esc(k)}" value="${esc(v)}"></label>`;
+      case "toggle": return `<label class="set" for="${id}"><span>${label}</span><input id="${id}" type="checkbox" data-lp="${esc(k)}" ${v ? "checked" : ""}></label>`;
+      case "select": return `<label class="set" for="${id}"><span>${label}</span><select id="${id}" data-lp="${esc(k)}">${(d.options || []).map((o) => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></label>`;
+      default: return `<label class="set" for="${id}"><span>${label}</span><input id="${id}" type="text" data-lp="${esc(k)}" value="${esc(v ?? "")}" spellcheck="false"></label>`;
+    }
+  };
+  const own = sc ? Object.entries(sc.params || {}).map(([k, d]) => ctl(k, d)).join("") : `<div class="muted">Loading…</div>`;
+  const theme = vals._theme || "", cs = vals._charset || "";
+  return `<h4>Settings</h4>${own || `<div class="muted">This scene has no settings of its own.</div>`}
+    <h4>Look</h4>
+    <label class="set"><span>Colours</span><select data-lp="_theme">${THEME_NAMES.map(([v, l]) => `<option value="${v}" ${v === theme ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    ${theme === "custom" ? `<label class="set"><span>Dark</span><input type="color" data-lp="_tintA" value="${esc(vals._tintA || "#0a3d2a")}"></label>
+      <label class="set"><span>Bright</span><input type="color" data-lp="_tintB" value="${esc(vals._tintB || "#c8ffe0")}"></label>` : ""}
+    <label class="set"><span>Characters</span><select data-lp="_charset">${CHARSET_NAMES.map(([v, l]) => `<option value="${v}" ${v === cs ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    <div class="row"><button data-lside="resetparams" title="Back to the scene's own settings and look">Reset settings</button></div>`;
+}
+
+function liveScheduleHTML() {
+  const st = LV.st, sc = st.schedule || {}, opts = (sel) => `<option value="">(none)</option>` + LV.scenes.map((x) => `<option value="${esc(x.name)}" ${x.name === sel ? "selected" : ""}>${esc(x.title)}</option>`).join("");
+  const now = st.period ? `It is ${st.period} now (${st.periodMode === "theme" ? "Windows light and dark mode" : "sunrise and sunset"}).` :
+    "Set your location or choose light and dark mode in Settings > Day and night.";
+  return `<h4>Day and night</h4>
+    <label class="set"><span>Switch scenes by day and night</span><input type="checkbox" data-lsched="enabled" ${sc.enabled ? "checked" : ""}></label>
+    <label class="set"><span>Day</span><select data-lsched="day">${opts(sc.day)}</select></label>
+    <label class="set"><span>Night</span><select data-lsched="night">${opts(sc.night)}</select></label>
+    <div class="note">${esc(now)}</div>`;
+}
+
+// ---- side panel ---------------------------------------------------------------------------
 
 function liveRenderSide() {
   const side = $("#side"), st = LV.st;
   if (!st) { side.innerHTML = `<div class="empty">Loading…</div>`; return; }
   if (side.dataset.mode !== "live") {
     side.dataset.mode = "live"; side.dataset.for = ""; side.classList.add("live-side");
-    side.innerHTML = `<div class="preview"><iframe id="liveSidePreview" title="Live preview"></iframe></div>
-      <div id="liveInfo"></div><label>Scenes</label><div id="livePicks" class="picks"></div>
+    side.innerHTML = `<div id="liveInfo"></div><div id="liveSettings"></div><div id="liveSched"></div><h4>Scenes</h4><div id="livePicks" class="picks"></div>
       <div class="note">Scenes are files in <span id="liveDirNote"></span>: edit them there, here, or ask Claude to write one. Favourites, bans and the slideshow are in Library &gt; Live wallpapers.</div>`;
-    LV.previewKey = "";
   }
   const s = liveCur() || { name: st.scene, title: st.scene };
-  liveSetPreview(st.scene);
   $("#liveDirNote").textContent = st.scenesDir;
   const f = S.frames["live:" + st.scene];
   const on = st.enabled && st.running;
   const fps = st.fps || s.fps || 30, ch = st.charMM || s.charMM || 4.2;
   const rel = f ? f.zoom / (f.def || 1.5) : 1; // 1 = the canvas at 1:1 on the monitors
   const fr = f ? imgRect(bbox(), f) : null;
-  const p = st.page;
+  const p = st.page, err = LV.err[st.scene] || (on && p && p.error ? { message: p.error, line: p.line } : null);
   const kv = [
     ["Desktop", on ? "showing this scene" : st.enabled ? "starting…" : "animation off"],
     ["Frame rate", `${fps} fps` + (st.fps ? ` (scene's own ${s.fps || 30})` : " (scene's own)")],
@@ -159,16 +242,22 @@ function liveRenderSide() {
     f ? ["Canvas", `${Math.round(f.w)} × ${Math.round(f.h)} mm, ${(f.w / Math.max(1, bbox().w)).toFixed(1)}× your monitors`] : null,
     f ? ["Framing", `${rel.toFixed(2)}× zoom` + (fr ? `, moved ${Math.round(f.dx * fr.w)}, ${Math.round(f.dy * fr.h)} mm` : "") + (f.rotate ? `, turned ${f.rotate}°` : "") + (f.flipX || f.flipY ? ", mirrored" : "")] : null,
     on && p && p.fps !== undefined ? ["Running", `${p.fps} fps, ${p.ms} ms a frame, ${p.cols}×${p.rows} characters`] : null,
-    on && p && p.error ? ["Error", p.error] : null,
   ].filter(Boolean);
   $("#liveInfo").innerHTML = `<h3>${esc(s.title)}</h3>
     <div class="badges"><span class="badge">${s.user ? (s.builtin ? "edited built-in" : "yours") : "built in"}</span><span class="badge">${esc(s.file || s.name + ".js")}</span>${s.framed ? `<span class="badge">framed</span>` : ""}${on ? `<span class="badge on">on screen</span>` : ""}</div>
     <div class="id">${esc(s.description || "")}</div>
+    ${err ? `<div class="err">Error${err.line ? ` at line ${err.line}` : ""}: ${esc(err.message)}</div>` : ""}
     <div class="kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join("")}</div>
     <div class="row rate"><button data-lrate="fav" data-n="${esc(s.name)}" class="${s.rating === "fav" ? "on" : ""}" title="Comes up more often in the live slideshow">★ Favourite</button>
       <button data-lrate="ban" data-n="${esc(s.name)}" class="${s.rating === "ban" ? "on" : ""}" title="Never shown by the live slideshow">Ban</button></div>
-    <div class="row"><button data-lside="edit">Edit code</button>${on ? "" : `<button data-lside="show" class="primary">Show on desktop</button>`}</div>
-    <div class="note">Drag the scene to move it, drag a corner or scroll to zoom, the curved arrows or [ ] to turn, H and V to mirror. Save &amp; apply to use it.</div>`;
+    <div class="row"><button data-lside="edit">Edit code</button><button data-lside="dup" title="Copy this scene under a new name to make it your own">Duplicate</button>${on ? "" : `<button data-lside="show" class="primary">Show on desktop</button>`}</div>
+    <div class="note">Drag the scene to move it, drag a corner or scroll to zoom, the curved arrows or [ ] to turn, H and V to mirror; the desktop follows as you drag. Save &amp; apply to keep it.</div>`;
+  const setKey = st.scene + JSON.stringify(LV.schema[st.scene] || null) + (liveValues(st.scene)._theme || "");
+  const sets = $("#liveSettings");
+  if (sets.dataset.key !== setKey && !sets.contains(document.activeElement)) { sets.dataset.key = setKey; sets.innerHTML = liveSettingsHTML(st.scene); }
+  const schedKey = JSON.stringify([st.schedule, st.period, LV.scenes.map((x) => x.name + x.title)]);
+  const sch = $("#liveSched");
+  if (sch.dataset.key !== schedKey && !sch.contains(document.activeElement)) { sch.dataset.key = schedKey; sch.innerHTML = liveScheduleHTML(); }
   const key = LV.scenes.map((x) => x.name + x.version + x.thumb + x.rating).join() + st.scene;
   const picks = $("#livePicks");
   if (picks.dataset.key !== key) {
@@ -176,7 +265,7 @@ function liveRenderSide() {
     picks.innerHTML = LV.scenes.map((x) => `<button class="pick ${x.name === st.scene ? "sel" : ""} ${x.rating === "ban" ? "banned" : ""}" data-lpick="${esc(x.name)}" title="${esc(x.description || "")}">` +
       (x.thumb ? `<img loading="lazy" src="/api/live/thumb?name=${encodeURIComponent(x.name)}&v=${encodeURIComponent(x.version)}">` : `<div class="pending">snapshot…</div>`) +
       `<span>${x.rating === "fav" ? "★ " : ""}${esc(x.title)}</span></button>`).join("");
-    for (const x of LV.scenes) if (!x.thumb) liveSnap(x.name, false);
+    for (const x of LV.scenes) if (!x.thumb) liveSnap(x.name);
   }
 }
 
@@ -186,9 +275,34 @@ $("#side").addEventListener("click", async (e) => {
   try {
     if (pk) await livePick(pk.dataset.lpick);
     else if (sd && sd.dataset.lside === "edit") await liveOpenCode(LV.st.scene);
+    else if (sd && sd.dataset.lside === "dup") await liveDuplicate(LV.st.scene);
     else if (sd && sd.dataset.lside === "show") await liveSet({ enabled: true }, "Showing on the desktop");
-    else if (rt) await liveRate(rt.dataset.n, rt.dataset.lrate);
+    else if (sd && sd.dataset.lside === "resetparams") {
+      LV.vals[LV.st.scene] = {}; $("#liveSettings").dataset.key = "";
+      tellBg({ type: "params", params: {} });
+      await api("/api/live/params", { scene: LV.st.scene, params: {} });
+      await liveLoadScenes(); render();
+    } else if (rt) await liveRate(rt.dataset.n, rt.dataset.lrate);
   } catch (err) { fail(err); }
+});
+
+$("#side").addEventListener("input", (e) => {
+  const el = e.target.closest("[data-lp]");
+  if (!LV.on || !el) return;
+  const name = LV.st.scene, vals = liveValues(name), k = el.dataset.lp;
+  vals[k] = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value : el.value;
+  if (el.type === "range") { const b = el.parentElement.querySelector("b"); if (b) b.textContent = el.value; }
+  if (k === "_theme") { $("#liveSettings").dataset.key = ""; render(); } // custom shows two more colours
+  liveParamChanged(name);
+});
+
+$("#side").addEventListener("change", async (e) => {
+  const el = e.target.closest("[data-lsched]");
+  if (!LV.on || !el) return;
+  const box = $("#liveSched"), sc = { enabled: box.querySelector("[data-lsched=enabled]").checked,
+    day: box.querySelector("[data-lsched=day]").value, night: box.querySelector("[data-lsched=night]").value };
+  if (sc.enabled && !sc.day && !sc.night) { toast("Pick a day scene and a night scene", true); }
+  try { await liveSet({ schedule: sc }, sc.enabled ? "Day and night scenes on" : "Day and night scenes off"); } catch (err) { fail(err); }
 });
 
 async function liveRate(name, r) {
@@ -201,26 +315,52 @@ async function liveRate(name, r) {
   if (S.libTab === "live" && $("#tab-library").classList.contains("active")) liveRenderCards();
 }
 
+async function liveDuplicate(name) {
+  const to = (prompt(`Copy ${name} as (lower-case letters, digits, - and _)`, name + "-copy") || "").trim();
+  if (!to) return;
+  const r = await api("/api/live/duplicate", { from: name, name: to, activate: LV.on });
+  toast(`Made ${r.scene}: it's yours to edit`);
+  liveForgetFrames();
+  await liveLoadScenes(); liveRefresh();
+  if (S.libTab === "live" && $("#tab-library").classList.contains("active")) liveRenderCards();
+  return r.scene;
+}
+
+// ---- code editor --------------------------------------------------------------------------
+
 async function liveOpenCode(name) {
   const r = await api("/api/live/scene?name=" + encodeURIComponent(name));
   LV.code = r.name;
-  $("#liveCodeName").textContent = r.name + ".js" + (r.user ? "" : " (built-in)");
+  $("#liveCodeName").textContent = r.name + ".js" + (r.user ? "" : " (built-in: saving makes your own copy of the same name; Duplicate keeps the original too)");
   $("#liveCodeText").value = r.code;
   $("#liveCode").classList.remove("hidden");
+  liveShowCodeError();
 }
 
-// Server-sent "live" event: something about the animation changed.
-async function liveChanged() {
-  await liveLoadScenes();
-  if (LV.on) { liveRefresh(); liveSetPreview(LV.st && LV.st.scene, true); }
-  if (S.libTab === "live" && $("#tab-library").classList.contains("active")) liveRenderCards();
+function liveShowCodeError() {
+  const bar = $("#liveCodeErr"), e = LV.code && LV.err[LV.code];
+  bar.classList.toggle("hidden", !e);
+  if (!e) return;
+  bar.textContent = (e.line ? `Line ${e.line}: ` : "") + e.message;
+  bar.dataset.line = e.line || "";
 }
 
-$("#liveToggle").addEventListener("click", () => liveSet({ enabled: !(LV.st && LV.st.enabled) }).catch(fail));
-$("#liveSave").addEventListener("click", () => { liveForgetFrames(); liveSet({ fps: +$("#liveFps").value, charMM: +$("#liveChar").value || 0 }, "Set").catch(fail); });
+function liveGotoLine(n) {
+  const t = $("#liveCodeText"), lines = t.value.split("\n");
+  if (!n || n > lines.length) return;
+  let a = 0;
+  for (let i = 0; i < n - 1; i++) a += lines[i].length + 1;
+  t.focus();
+  t.setSelectionRange(a, a + lines[n - 1].length);
+  const lh = parseFloat(getComputedStyle(t).lineHeight) || 19;
+  t.scrollTop = Math.max(0, (n - 4) * lh);
+}
+
+$("#liveCodeErr").addEventListener("click", () => liveGotoLine(+$("#liveCodeErr").dataset.line));
 $("#liveCodeClose").addEventListener("click", () => $("#liveCode").classList.add("hidden"));
 $("#liveCodeSave").addEventListener("click", async () => {
   try {
+    delete LV.err[LV.code]; liveShowCodeError();
     await api("/api/live/scene", { name: LV.code, code: $("#liveCodeText").value, activate: true });
     toast("Saved"); await liveLoadScenes(); liveRefresh();
   } catch (e) { fail(e); }
@@ -229,6 +369,27 @@ $("#liveCodeText").addEventListener("keydown", (e) => {
   if (e.key === "Tab") { e.preventDefault(); const t = e.target, a = t.selectionStart; t.setRangeText("  ", a, t.selectionEnd, "end"); }
   if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("#liveCodeSave").click(); }
 });
+
+// ---- messages from the background frame and snapshots --------------------------------------
+
+addEventListener("message", (e) => {
+  if (e.origin !== location.origin || !e.data) return;
+  const d = e.data;
+  if (d.snapshot) return liveSnapDone(d.snapshot, d.ok);
+  if (d.type === "hello") { liveSendView(); const v = LV.st && LV.vals[LV.st.scene]; if (v) tellBg({ type: "params", params: v }); }
+  else if (d.type === "scene") { LV.schema[d.scene] = { params: d.params }; delete LV.err[d.scene]; if (LV.on) render(); liveShowCodeError(); }
+  else if (d.type === "error") { LV.err[d.scene] = { message: d.message, line: d.line }; if (LV.on) render(); liveShowCodeError(); }
+});
+
+// Server-sent "live" event: something about the animation changed.
+async function liveChanged() {
+  await liveLoadScenes();
+  if (LV.on) liveRefresh();
+  if (S.libTab === "live" && $("#tab-library").classList.contains("active")) liveRenderCards();
+}
+
+$("#liveToggle").addEventListener("click", () => liveSet({ enabled: !(LV.st && LV.st.enabled) }).catch(fail));
+$("#liveSave").addEventListener("click", () => { liveForgetFrames(); liveSet({ fps: +$("#liveFps").value, charMM: +$("#liveChar").value || 0 }, "Set").catch(fail); });
 
 // ---- the Live wallpapers folder in the Library ----------------------------------------
 
@@ -243,37 +404,36 @@ function liveRenderCards() {
       <div class="rate">
         <button data-lrate="fav" data-n="${esc(s.name)}" class="${s.rating === "fav" ? "on" : ""}" title="Favourite: comes up more often in the slideshow">★</button>
         <button data-lrate="ban" data-n="${esc(s.name)}" class="${s.rating === "ban" ? "on" : ""}" title="Never show in the slideshow">Ban</button>
+        <button data-lact="dup" data-n="${esc(s.name)}" title="Copy this scene under a new name to make it your own">Duplicate</button>
       </div>
       <div class="acts"><button data-lact="edit" data-n="${esc(s.name)}">Edit code</button><button data-lact="apply" data-n="${esc(s.name)}" class="primary">${cur ? "On screen" : "Apply"}</button></div>
     </div>`;
   }).join("");
   $("#libGrid").innerHTML = cards ? cards + `<div class="fill"></div>` : `<p class="muted" style="padding:18px">No live wallpapers yet.</p>`;
-  for (const s of LV.scenes) if (!s.thumb) liveSnap(s.name, false);
+  for (const s of LV.scenes) if (!s.thumb) liveSnap(s.name);
 }
 
 // Snapshots: a scene is drawn for a moment in a hidden frame, which saves a
-// picture (of the desk, or of the scene's whole canvas for the editor); one
-// at a time, and again whenever the scene changes.
-function liveSnap(name, world, first) {
-  const id = name + (world ? "#world" : "");
-  if (LV.snapping === id || LV.snapQ.includes(id)) return;
-  if (first) LV.snapQ.unshift(id); else LV.snapQ.push(id);
+// picture of the desk; one at a time, and again whenever the scene changes.
+function liveSnap(name) {
+  if (LV.snapping === name || LV.snapQ.includes(name)) return;
+  LV.snapQ.push(name);
   liveSnapNext();
 }
 
 function liveSnapNext() {
   if (LV.snapping || !LV.snapQ.length) return;
-  const id = LV.snapQ.shift(), [name, world] = id.split("#");
-  LV.snapping = id;
+  const name = LV.snapQ.shift();
+  LV.snapping = name;
   let f = $("#snapFrame");
   if (!f) { f = document.createElement("iframe"); f.id = "snapFrame"; f.title = "snapshot"; document.body.appendChild(f); }
-  f.src = `/live/?snapshot=1${world ? "&world=1" : ""}&scene=${encodeURIComponent(name)}`;
+  f.src = `/live/?snapshot=1&scene=${encodeURIComponent(name)}`;
   clearTimeout(LV.snapTimer);
-  LV.snapTimer = setTimeout(() => liveSnapDone(id, false), 12000);
+  LV.snapTimer = setTimeout(() => liveSnapDone(name, false), 12000);
 }
 
-async function liveSnapDone(id, ok) {
-  if (LV.snapping !== id) return;
+async function liveSnapDone(name, ok) {
+  if (LV.snapping !== name) return;
   clearTimeout(LV.snapTimer);
   LV.snapping = null;
   $("#snapFrame").src = "about:blank";
@@ -285,10 +445,6 @@ async function liveSnapDone(id, ok) {
   liveSnapNext();
 }
 
-addEventListener("message", (e) => {
-  if (e.origin === location.origin && e.data && e.data.snapshot) liveSnapDone(e.data.snapshot + (e.data.world ? "#world" : ""), e.data.ok);
-});
-
 $("#libGrid").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-lrate],[data-lact]");
   if (!b) return;
@@ -296,6 +452,7 @@ $("#libGrid").addEventListener("click", async (e) => {
   try {
     if (b.dataset.lrate) await liveRate(name, b.dataset.lrate);
     else if (b.dataset.lact === "apply") await liveSet({ scene: name, enabled: true }, `Showing ${s.title}`);
+    else if (b.dataset.lact === "dup") await liveDuplicate(name);
     else {
       if (name !== (LV.st && LV.st.scene)) await api("/api/live", { scene: name });
       switchTab("layout");

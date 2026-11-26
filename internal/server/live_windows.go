@@ -4,6 +4,7 @@ package server
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -266,6 +268,9 @@ func (s *Server) liveRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/live/convert", s.liveConvert)
 	mux.HandleFunc("POST /api/live/rate", s.liveRate)
 	mux.HandleFunc("GET /api/live/frame", s.getLiveFrame)
+	mux.HandleFunc("POST /api/live/params", s.setLiveParams)
+	mux.HandleFunc("POST /api/live/duplicate", s.duplicateScene)
+	mux.HandleFunc("GET /api/live/stats", s.liveStats)
 	mux.HandleFunc("POST /api/live/frame", s.setLiveFrame)
 	mux.HandleFunc("GET /api/live/thumb", s.getLiveThumb)
 	mux.HandleFunc("POST /api/live/thumb", s.setLiveThumb)
@@ -309,7 +314,8 @@ func (s *Server) liveInfo(sess *app.Session) map[string]any {
 	}
 	out := map[string]any{"enabled": l.Enabled, "scene": l.SceneName(), "fps": l.FPS, "charMM": l.CharMM, "font": l.Font,
 		"running": running, "pid": pid, "scenes": scenes, "scenesDir": scenesDir(), "lastLog": lastLog,
-		"album": sess.Cfg.Slideshow.Source == "live"}
+		"album": sess.Cfg.Slideshow.Source == "live", "params": l.Params, "schedule": l.Schedule, "period": modePeriod(sess.Cfg, time.Now()),
+		"periodMode": scheduleMode(sess.Cfg)}
 	if rep != nil && time.Since(at) < time.Minute {
 		out["page"] = rep
 	}
@@ -328,6 +334,8 @@ func (s *Server) setLive(w http.ResponseWriter, r *http.Request) {
 		FPS     *int     `json:"fps"`
 		CharMM  *float64 `json:"charMM"`
 		Font    *string  `json:"font"`
+		// Schedule: day and night scenes
+		Schedule *config.LiveSchedule `json:"schedule"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeJSON(w, nil, err)
@@ -353,6 +361,14 @@ func (s *Server) setLive(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Font != nil {
 			l.Font = strings.TrimSpace(*req.Font)
+		}
+		if sc := req.Schedule; sc != nil {
+			for _, n := range []string{sc.Day, sc.Night} {
+				if n != "" && !live.ValidName(n) {
+					return nil, fmt.Errorf("no scene %q", n)
+				}
+			}
+			l.Schedule = *sc
 		}
 		if req.Enabled != nil {
 			l.Enabled = *req.Enabled
@@ -392,7 +408,12 @@ func (s *Server) liveRuntime(w http.ResponseWriter, r *http.Request) {
 			return nil, err
 		}
 		fr, _ := liveFrame(sess.Cfg.Live, name)
-		return map[string]any{"scene": name, "version": sceneVersion(name), "fps": l.FPS, "charMM": l.CharMM, "font": l.Font, "desk": desk, "frame": fr}, nil
+		out := map[string]any{"scene": name, "version": sceneVersion(name), "fps": l.FPS, "charMM": l.CharMM, "font": l.Font, "desk": desk, "frame": fr,
+			"params": l.Params[name]}
+		if c := sess.Cfg.Schedule; c.Lat != 0 || c.Lon != 0 {
+			out["location"] = map[string]float64{"lat": c.Lat, "lon": c.Lon} // the day and night location, for weather scenes
+		}
+		return out, nil
 	})
 	if err != nil {
 		writeJSON(w, map[string]string{"error": err.Error()}, nil)
@@ -455,8 +476,9 @@ func (s *Server) getLiveFrame(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) setLiveFrame(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Scene string `json:"scene"`
-		Reset bool   `json:"reset"`
+		Scene   string `json:"scene"`
+		Reset   bool   `json:"reset"`
+		Preview bool   `json:"preview"` // show it on the desktop while dragging; don't save
 		config.LiveFrame
 	}
 	if err := readJSON(r, &req); err != nil {
@@ -467,8 +489,15 @@ func (s *Server) setLiveFrame(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, nil, fmt.Errorf("bad scene name %q", req.Scene))
 		return
 	}
+	if req.Preview {
+		s.liveSendJSON("frame", map[string]any{"scene": req.Scene, "frame": req.LiveFrame})
+		writeJSON(w, map[string]any{"preview": true}, nil)
+		return
+	}
+	var saved config.LiveFrame
 	_, err := s.session(func(sess *app.Session) (any, error) {
 		l := &sess.Cfg.Live
+		defer func() { saved, _ = liveFrame(*l, req.Scene) }()
 		if req.Reset {
 			delete(l.Frames, req.Scene)
 		} else {
@@ -484,10 +513,126 @@ func (s *Server) setLiveFrame(w http.ResponseWriter, r *http.Request) {
 		return nil, sess.Save()
 	})
 	if err == nil {
-		s.liveSend("reload")
+		s.liveSendJSON("frame", map[string]any{"scene": req.Scene, "frame": saved}) // no reload: the scene keeps running
 		s.events.publish("live")
 	}
 	writeJSON(w, map[string]any{"saved": err == nil}, err)
+}
+
+// duplicateScene copies a scene (built-in or the user's) to a new name in
+// the user's folder, with its framing and settings, to edit as their own.
+func (s *Server) duplicateScene(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		From     string `json:"from"`
+		Name     string `json:"name"`
+		Activate bool   `json:"activate"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	src, _, err := live.Open(web.FS(), scenesDir(), req.From+".js")
+	if err != nil || !live.ValidName(req.From) {
+		writeJSON(w, nil, fmt.Errorf("no scene %q", req.From))
+		return
+	}
+	name := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(req.Name)), ".js")
+	if name == "" {
+		name = req.From + "-copy"
+	}
+	if !live.ValidName(name) {
+		writeJSON(w, nil, fmt.Errorf("scene names are lower-case letters, digits, - and _ (got %q)", name))
+		return
+	}
+	base := name
+	for i := 2; ; i++ { // never overwrite
+		if _, _, err := live.Open(web.FS(), scenesDir(), name+".js"); err != nil {
+			break
+		}
+		name = fmt.Sprintf("%s-%d", base, i)
+	}
+	code := string(src)
+	// A copy says so in its title, so the two are told apart in lists.
+	if m := regexp.MustCompile(`(?m)^(\s*name:\s*")([^"]*)(")`).FindStringSubmatchIndex(code); m != nil {
+		code = code[:m[5]] + " (copy)" + code[m[5]:]
+	}
+	if err := live.Write(scenesDir(), name, code); err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	s.session(func(sess *app.Session) (any, error) {
+		l := &sess.Cfg.Live
+		if f, ok := l.Frames[req.From]; ok {
+			l.Frames[name] = f
+		}
+		if p, ok := l.Params[req.From]; ok {
+			if l.Params == nil {
+				l.Params = map[string]map[string]any{}
+			}
+			l.Params[name] = p
+		}
+		if req.Activate {
+			l.Scene = name
+		}
+		return nil, sess.Save()
+	})
+	s.afterSceneWrite(name, req.Activate)
+	writeJSON(w, map[string]any{"scene": name}, nil)
+}
+
+// liveSendJSON passes a command with a JSON payload to the host, which hands
+// it to the page.
+func (s *Server) liveSendJSON(cmd string, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	s.liveSend(cmd + " " + string(b))
+}
+
+func (s *Server) setLiveParams(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Scene   string         `json:"scene"`
+		Params  map[string]any `json:"params"`
+		Preview bool           `json:"preview"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	if !live.ValidName(req.Scene) {
+		writeJSON(w, nil, fmt.Errorf("bad scene name %q", req.Scene))
+		return
+	}
+	if b, _ := json.Marshal(req.Params); len(b) > 16<<10 {
+		writeJSON(w, nil, errors.New("settings are too big"))
+		return
+	}
+	if !req.Preview {
+		if _, err := s.session(func(sess *app.Session) (any, error) {
+			l := &sess.Cfg.Live
+			if l.Params == nil {
+				l.Params = map[string]map[string]any{}
+			}
+			if len(req.Params) == 0 {
+				delete(l.Params, req.Scene)
+			} else {
+				l.Params[req.Scene] = req.Params
+			}
+			return nil, sess.Save()
+		}); err != nil {
+			writeJSON(w, nil, err)
+			return
+		}
+		s.live.mu.Lock()
+		s.live.watchVer = "" // a snapshot taken with other settings is out of date
+		s.live.mu.Unlock()
+	}
+	s.liveSendJSON("params", map[string]any{"scene": req.Scene, "params": req.Params})
+	if !req.Preview {
+		s.events.publish("live")
+	}
+	writeJSON(w, map[string]any{"saved": !req.Preview}, nil)
 }
 
 func (s *Server) liveReport(w http.ResponseWriter, r *http.Request) {

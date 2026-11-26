@@ -1,43 +1,44 @@
-// A big block clock on the largest monitor. It only redraws when the time
+// A big block clock on your main monitor. It only redraws when the time
 // changes, so it costs almost nothing.
-const FONT = { // 5x7
-  0: ["01110", "10001", "10011", "10101", "11001", "10001", "01110"], 1: ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
-  2: ["01110", "10001", "00001", "00010", "00100", "01000", "11111"], 3: ["11111", "00010", "00100", "00010", "00001", "10001", "01110"],
-  4: ["00010", "00110", "01010", "10010", "11111", "00010", "00010"], 5: ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
-  6: ["00110", "01000", "10000", "11110", "10001", "10001", "01110"], 7: ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
-  8: ["01110", "10001", "10001", "01110", "10001", "10001", "01110"], 9: ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
-  ":": ["0", "1", "1", "0", "1", "1", "0"],
-};
+import { big, textWidth } from "./_font.js";
 
 export default {
   name: "Clock",
-  description: "A large block clock with the date, on your biggest monitor.",
+  description: "A large block clock with the date, on your main monitor.",
   fps: 2,
   cell: { h: 4.2 },
   background: "#07090d",
+  params: {
+    h24: { label: "24-hour", type: "toggle", default: true },
+    seconds: { label: "Seconds", type: "toggle", default: false },
+    date: { label: "Date", type: "toggle", default: true },
+    size: { label: "Size", type: "range", min: 0.2, max: 0.95, step: 0.05, default: 0.55 },
+    color: { label: "Colour", type: "color", default: "#6fb4ff" },
+    dots: { label: "Dot background", type: "toggle", default: true },
+  },
   draw(g) {
-    const now = new Date(), key = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() % 2) * 0.5;
+    const P = g.params, now = new Date();
+    const key = [now.getHours(), now.getMinutes(), P.seconds ? now.getSeconds() : now.getSeconds() % 2, g.paramsVersion].join();
     if (key === this.key) return false; // nothing changed: skip the upload and redraw
     this.key = key;
-    const hh = String(now.getHours()).padStart(2, "0"), mm = String(now.getMinutes()).padStart(2, "0");
-    const blink = now.getSeconds() % 2 === 0;
-    const text = hh + ":" + mm, m = g.main;
-    const width = [...text].reduce((w, ch) => w + FONT[ch][0].length + 1, -1);
-    const px = Math.max(1, Math.floor(((m.c1 - m.c0) * 0.55) / width)); // cells per font pixel (x)
+    let h = now.getHours();
+    const ampm = h < 12 ? "AM" : "PM";
+    if (!P.h24) h = h % 12 || 12;
+    const sep = P.seconds || now.getSeconds() % 2 === 0 ? ":" : " ";
+    let text = String(h).padStart(2, P.h24 ? "0" : " ") + sep + String(now.getMinutes()).padStart(2, "0");
+    if (P.seconds) text += ":" + String(now.getSeconds()).padStart(2, "0");
+    const m = g.main, width = textWidth(text);
+    const px = Math.max(1, Math.floor(((m.c1 - m.c0) * P.size) / width)); // cells per font pixel (x)
     const py = Math.max(1, Math.round((px * g.cw) / g.ch)); // keep pixels square in mm
+    const base = parseInt(String(P.color).slice(1), 16) || 0x6fb4ff;
     g.clear(32, 0x2a3140);
-    for (let r = 0; r < g.rows; r += 3) for (let c = (r / 3) % 2 ? 2 : 0; c < g.cols; c += 6) g.put(c, r, "·", 0x1b2029);
-    let x = m.cc - Math.floor((width * px) / 2);
-    const y = m.cr - Math.floor((7 * py) / 2);
-    for (const ch of text) {
-      const rows = FONT[ch], on = ch !== ":" || blink;
-      for (let fy = 0; fy < 7; fy++) for (let fx = 0; fx < rows[fy].length; fx++) {
-        if (rows[fy][fx] !== "1" || !on) continue;
-        for (let a = 0; a < py; a++) for (let b = 0; b < px; b++) g.put(x + fx * px + b, y + fy * py + a, "█", g.hsl(0.55 + (fy / 7) * 0.08, 0.6, 0.62));
-      }
-      x += (rows[0].length + 1) * px;
+    if (P.dots) for (let r = 0; r < g.rows; r += 3) for (let c = (r / 3) % 2 ? 2 : 0; c < g.cols; c += 6) g.put(c, r, "·", 0x1b2029);
+    const x = m.cc - Math.floor((width * px) / 2), y = m.cr - Math.floor((7 * py) / 2);
+    big(g, text, x, y, px, py, (fx, fy) => g.mix(base, 0xffffff, fy / 14));
+    if (!P.h24) g.text(x + width * px + px, y, ampm, base);
+    if (P.date) {
+      const date = now.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }).toUpperCase();
+      g.text(m.cc - (date.length >> 1), y + 7 * py + py * 2, date, g.mix(base, 0x8a96aa, 0.6));
     }
-    const date = now.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }).toUpperCase();
-    g.text(m.cc - (date.length >> 1), y + 7 * py + py * 2, date, 0x8a96aa);
   },
 };

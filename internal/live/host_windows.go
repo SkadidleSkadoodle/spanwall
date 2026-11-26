@@ -342,6 +342,10 @@ func (h *host) commands() {
 	for {
 		select {
 		case c := <-h.cmds:
+			if cmd, arg, ok := strings.Cut(c, " "); ok && (cmd == "frame" || cmd == "params") && json.Valid([]byte(arg)) {
+				h.eval("spanwall.set" + map[string]string{"frame": "Frame", "params": "Params"}[cmd] + "(" + arg + ")")
+				continue
+			}
 			switch c {
 			case "reload":
 				h.eval("spanwall.reload()")
