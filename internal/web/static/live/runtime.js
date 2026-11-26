@@ -140,6 +140,19 @@ function placeMonitors(G, desk, F) {
     G.monitors.push({ id: m.id, name: m.name, primary: !!m.primary, x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0, c0, r0, c1, r1, cc: ((c0 + c1) / 2) | 0, cr: ((r0 + r1) / 2) | 0 });
   }
   G.main = G.monitors.find((m) => m.primary) || G.monitors.reduce((a, b) => (!a || b.w * b.h > a.w * a.h ? b : a), null) || { c0: 0, r0: 0, c1: cols - 1, r1: rows - 1, cc: cols >> 1, cr: rows >> 1 };
+  // g.home / g.anchor: the same boxes under the default framing. Scenes lay
+  // their content out from these, so the user's framing (and rebuilding on a
+  // settings change) moves the whole canvas consistently instead of
+  // re-centring the content on wherever the monitor now sits.
+  const D = makeFrame(desk, null);
+  G.home = desk.monitors.map((m) => {
+    const poly = outline(m).map(([x, y]) => D.toWorld(x, y));
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    for (const [x, y] of poly) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y); }
+    const c0 = Math.max(0, Math.floor(bx0 / cw)), r0 = Math.max(0, Math.floor(by0 / ch)), c1 = Math.min(cols - 1, Math.floor(bx1 / cw)), r1 = Math.min(rows - 1, Math.floor(by1 / ch));
+    return { id: m.id, name: m.name, primary: !!m.primary, x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0, c0, r0, c1, r1, cc: ((c0 + c1) / 2) | 0, cr: ((r0 + r1) / 2) | 0 };
+  });
+  G.anchor = G.home.find((m) => m.primary) || G.home.reduce((a, b) => (!a || b.w * b.h > a.w * a.h ? b : a), null) || G.main;
 }
 
 function outline(m) { // boundary of a monitor's mesh, in mm

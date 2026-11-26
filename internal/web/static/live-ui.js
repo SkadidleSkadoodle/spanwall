@@ -129,6 +129,7 @@ function liveLeave() {
   $("#canvas").classList.toggle("moving-img", S.moveImg);
   $("#btnResetImg").textContent = "Reset image";
   liveSetBg("");
+  LV.fitFor = null;
   $("#layoutSelect").value = S.view;
   fit(); render();
 }
@@ -150,7 +151,8 @@ function liveRefresh() {
   $("#liveChar").placeholder = "auto";
   if (!LV.on) return;
   liveSetBg(st.scene);
-  if (S.displays && S.displays.length) { fit(); render(); }
+  // refit only when the scene changes; a settings save must not move the view
+  if (S.displays && S.displays.length) { if (LV.fitFor !== st.scene) { LV.fitFor = st.scene; fit(); } render(); }
 }
 
 async function liveSet(body, msg) {
