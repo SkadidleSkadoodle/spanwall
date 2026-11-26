@@ -315,7 +315,12 @@ async function load() {
   if (!failed && scene.setup) { try { await scene.setup(g); } catch (e) { failed = e; } }
   if (failed) showError(failed);
   else report({ loaded: true, monitors: live.length, visible: live.filter(Boolean).length, webgl: !!gl });
-  schedule();
+  // Draw the first frame now: the window stays hidden (and gets no animation
+  // frames) until the page says it is ready.
+  if (raf) { cancelAnimationFrame(raf); raf = 0; }
+  if (timer) { clearTimeout(timer); timer = 0; }
+  frame(performance.now());
+  if (!readySent) { readySent = true; try { window.chrome.webview.postMessage("ready"); } catch (e) { /* preview */ } }
 }
 
 function showError(e) {
@@ -338,7 +343,7 @@ function schedule() {
 
 function frame(now) {
   raf = 0; last = now;
-  if (!live.some(Boolean)) return; // every monitor covered: stop until one shows again
+  if (!live.some(Boolean) && readySent) return; // every monitor covered: stop until one shows again
   const w0 = performance.now();
   let changed = false;
   if (!failed) {
@@ -347,7 +352,6 @@ function frame(now) {
   }
   if (changed) upload(R, g);
   if (changed || needDraw) { draw(R, g); needDraw = false; }
-  if (!readySent) { readySent = true; try { window.chrome.webview.postMessage("ready"); } catch (e) { /* preview */ } }
   stats.frames++; stats.ms += performance.now() - w0;
   schedule();
 }
