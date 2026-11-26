@@ -111,8 +111,8 @@ Linux).
     at the bottom (Microsoft's guidance quoted in Lively's WinDesktopCore.cs); older builds:
     child of the WorkerW behind the icons. Created hidden; shown when the page posts "ready".
     Every 1 s: health (exit 3 if Explorer took the window away; the server restarts it),
-    resize to Progman, coverage (SHQueryUserNotificationState full-screen, or a visible,
-    uncloaked, opaque, non-tool window covering >= 90% of a monitor) -> `spanwall.covered()`
+    resize to Progman, coverage (a visible, uncloaked, opaque, non-tool window covering >= 90% of a
+    monitor; a full-screen D3D game, SHQueryUserNotificationState 3, covers all) -> `spanwall.covered()`
     in the page; everything covered, locked (WTS) or displays off (GUID_CONSOLE_DISPLAY_STATE)
     -> controller IsVisible false, so the page stops completely. stdin commands: reload,
     hide, show, quit; stdin closing ends it.

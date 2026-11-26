@@ -422,13 +422,16 @@ var shellClasses = map[string]bool{"Progman": true, "WorkerW": true, "Shell_Tray
 	"SpanwallLive": true, "SpanwallLiveMsg": true, "NotifyIconOverflowWindow": true}
 
 // coverage returns the monitors and those almost entirely hidden by a window
-// (a maximised app, a full-screen game or video), as [x, y, w, h] rects.
+// (a maximised app, a full-screen video, or every monitor during a full-screen
+// game), as [x, y, w, h] rects.
 func coverage() (mons []rect, covered [][4]int32) {
 	mons, _ = enumMonitors()
 	cov := make([]bool, len(mons))
 	var qs uint32
-	if r, _, _ := pSHQueryUserNotification.Call(uintptr(unsafe.Pointer(&qs))); r == 0 && (qs == 2 || qs == 3 || qs == 4) {
-		for i := range cov { // full-screen app, D3D game or presentation: pause everything
+	// A full-screen D3D game pauses everything (leave it the GPU); a
+	// full-screen video or app covers only its own monitor, found below.
+	if r, _, _ := pSHQueryUserNotification.Call(uintptr(unsafe.Pointer(&qs))); r == 0 && qs == 3 {
+		for i := range cov {
 			cov[i] = true
 		}
 	} else {
