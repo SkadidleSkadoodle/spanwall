@@ -9,6 +9,7 @@ const Q = new URLSearchParams(location.search);
 const PREVIEW = Q.has("preview");
 const canvas = document.getElementById("c");
 const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: "low-power" });
+if (!gl) fetch("/api/live/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ error: "WebGL2 is not available" }) });
 
 const SW = 40, SH = 72, PAD = 4, AW = 2048, AH = 2048; // atlas: slot size, padding, size
 const PER_ROW = Math.floor(AW / SW), SLOTS = PER_ROW * Math.floor(AH / SH);
@@ -313,6 +314,7 @@ async function load() {
   t0 = performance.now(); last = 0; needDraw = true;
   if (!failed && scene.setup) { try { await scene.setup(g); } catch (e) { failed = e; } }
   if (failed) showError(failed);
+  else report({ loaded: true, monitors: live.length, visible: live.filter(Boolean).length, webgl: !!gl });
   schedule();
 }
 

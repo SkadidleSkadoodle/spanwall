@@ -393,6 +393,7 @@ func (h *host) tick() {
 	b, _ := json.Marshal(covered)
 	if s := string(b); s != h.lastCovered {
 		h.lastCovered = s
+		log.Printf("covered: %d of %d monitors %s", len(covered), len(mons), s)
 		h.eval("spanwall.covered(" + s + ")")
 	}
 	h.allCovered = len(covered) == len(mons) && len(mons) > 0
@@ -405,6 +406,7 @@ func (h *host) updateVisible() {
 		return
 	}
 	h.visible = v
+	log.Printf("visible: %v (server hid it %v, locked %v, displays off %v, all covered %v)", v, h.hiddenByServer, h.locked, h.displayOff, h.allCovered)
 	if c := h.view.GetController(); c != nil {
 		c.PutIsVisible(v) // hidden: the page stops drawing entirely
 	}

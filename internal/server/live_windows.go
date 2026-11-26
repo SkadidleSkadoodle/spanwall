@@ -409,6 +409,8 @@ func (s *Server) liveReport(w http.ResponseWriter, r *http.Request) {
 	s.live.mu.Unlock()
 	if e, ok := rep["error"].(string); ok && e != "" {
 		s.log.Printf("live: page: %s", e)
+	} else if rep["loaded"] == true {
+		s.log.Printf("live: page loaded %v (%v of %v monitors visible, %vx%v cells)", rep["scene"], rep["visible"], rep["monitors"], rep["cols"], rep["rows"])
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
