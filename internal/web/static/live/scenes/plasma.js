@@ -3,7 +3,7 @@
 export default {
   name: "Plasma",
   description: "Slow flowing colour waves in ASCII shading.",
-  fps: 30,
+  fps: 20,
   cell: { h: 4.2 },
   background: "#05070a",
   setup(g) {

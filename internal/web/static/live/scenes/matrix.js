@@ -4,7 +4,7 @@ const GLYPHS = "ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈ�
 export default {
   name: "Digital rain",
   description: "Falling green katakana streams, like the film.",
-  fps: 24,
+  fps: 20,
   cell: { h: 4.6 },
   background: "#000000",
   setup(g) {

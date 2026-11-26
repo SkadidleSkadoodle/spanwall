@@ -3,7 +3,7 @@
 export default {
   name: "Donut",
   description: "The classic spinning ASCII torus, lit and shaded.",
-  fps: 30,
+  fps: 24,
   cell: { h: 4.2 },
   background: "#06060a",
   setup(g) {
