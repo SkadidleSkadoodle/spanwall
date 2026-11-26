@@ -157,6 +157,12 @@ func RunHost(url string) int {
 			h.shown = true
 			pShowWindow.Call(h.wnd, swShowNoActivate)
 			h.fixZ()
+			// WebView2 doesn't notice its parent being shown: tell it, or the
+			// page stays "hidden" and gets no animation frames.
+			if c := h.view.GetController(); c != nil && h.visible {
+				c.PutIsVisible(false)
+				c.PutIsVisible(true)
+			}
 			log.Printf("showing (%s)", h.mode())
 		}
 	}
