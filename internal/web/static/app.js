@@ -77,7 +77,7 @@ async function loadLayout(keepEdits = false) {
   const lay = await api("/api/layout?name=" + encodeURIComponent(S.view));
   const sel = $("#layoutSelect");
   const names = [...new Set([...lay.saved, S.view])];
-  sel.innerHTML = names.map((n) => `<option ${n === S.view ? "selected" : ""}>${esc(n)}</option>`).join("");
+  sel.innerHTML = names.map((n) => `<option ${n === S.view ? "selected" : ""}>${esc(n)}</option>`).join("") + liveOption();
   const saved = {};
   let right = 0;
   for (const m of lay.monitors) if (m.placed) right = Math.max(right, m.xMM + m.widthMM);
@@ -652,6 +652,9 @@ const quadPts = (q) => [0, 2, 4, 6].map((i) => `${q[i]},${q[i + 1]}`).join(" ");
 // ---- toolbar ------------------------------------------------------------------------
 function initToolbar() {
   $("#layoutSelect").addEventListener("change", async (e) => {
+    const v = e.target.value;
+    if (v === LIVE_VALUE) { liveEnter(); return; }
+    if (LV.on) { liveLeave(); if (v === S.view) return; e.target.value = v; }
     if (isDirty() && !confirm("Discard unsaved changes?")) { e.target.value = S.view; return; }
     S.view = e.target.value; S.cur = {};
     await loadLayout();
@@ -834,7 +837,7 @@ function showProposal(p) {
 // ---- library ----------------------------------------------------------------------
 async function loadLibrary() {
   try {
-    const r = await api("/api/wallpapers");
+    const [r] = await Promise.all([api("/api/wallpapers"), liveLoadScenes()]);
     S.lib = r.images || [];
     S.folders = r.folders || [];
     $("#libDir").textContent = r.dir;
@@ -847,20 +850,22 @@ const inFolder = (im, name) => (im.folders || []).some((f) => f.toLowerCase() ==
 
 function renderLibTabs() {
   const tab = S.libTab;
-  if (!["all", "fav", "ban"].includes(tab) && !S.folders.some((f) => f.name.toLowerCase() === tab.toLowerCase())) S.libTab = "all";
+  if (!["all", "fav", "ban", "live"].includes(tab) && !S.folders.some((f) => f.name.toLowerCase() === tab.toLowerCase())) S.libTab = "all";
   const n = (pred) => S.lib.filter(pred).length;
-  const tabs = [["all", "All wallpapers", S.lib.length], ["fav", "Favourites", n((im) => im.rating === "fav")]]
+  const tabs = [["all", "All wallpapers", S.lib.length], ["fav", "Favourites", n((im) => im.rating === "fav")], ["live", "Live wallpapers", LV.scenes.length]]
     .concat(S.folders.map((f) => [f.name, f.name, f.count]));
   const bans = n((im) => im.rating === "ban");
   if (bans) tabs.push(["ban", "Banned", bans]);
   const cur = S.folders.find((f) => f.name.toLowerCase() === S.libTab.toLowerCase());
   $("#libTabs").innerHTML = tabs.map(([k, label, c]) => `<button data-libtab="${esc(k)}" class="${k.toLowerCase() === S.libTab.toLowerCase() ? "active" : ""}">${esc(label)}<span class="n">${c}</span></button>`).join("") +
     `<button class="new" data-libnew="1" title="Make a folder; a wallpaper can be in several">+ New folder</button>` +
+    (S.libTab === "live" ? `<span class="tools"><button data-livemake="1" title="Turn a GIF, video or picture into ASCII art">+ From a GIF, video or picture</button></span>` : "") +
     (cur && !cur.builtin ? `<span class="tools"><button data-libren="1">Rename</button><button data-libdel="1" class="danger">Delete folder</button></span>` : "");
 }
 
 function renderLibrary() {
   renderLibTabs();
+  if (S.libTab === "live") { liveRenderCards(); return; }
   const cur = wallpaperPath();
   const t = S.libTab;
   const keep = (im) => t === "all" || (t === "fav" ? im.rating === "fav" : t === "ban" ? im.rating === "ban" : inFolder(im, t));
@@ -925,7 +930,7 @@ function showSlideshow() {
   b.classList.toggle("on", ss.enabled);
   b.textContent = ss.enabled ? "❚❚ Pause" : "▶ Play";
   // Album: all, favourites, then every folder (new ones appear here).
-  const opts = [["", "All wallpapers"], ["fav", "Favourites"]].concat(S.folders.map((f) => [f.name, f.name]));
+  const opts = [["", "All wallpapers"], ["fav", "Favourites"], ["live", "Live wallpapers"]].concat(S.folders.map((f) => [f.name, f.name]));
   if (ss.source && !opts.some((o) => o[0] === ss.source)) opts.push([ss.source, ss.source]);
   const html = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
   if ($("#slideSource").dataset.html !== html) { $("#slideSource").innerHTML = html; $("#slideSource").dataset.html = html; }
@@ -981,6 +986,7 @@ function initLibrary() {
   $("#libTabs").addEventListener("click", async (e) => {
     const t = e.target.closest("[data-libtab]");
     if (t) { S.libTab = t.dataset.libtab; renderLibrary(); $("#libGrid").scrollTop = 0; return; }
+    if (e.target.closest("[data-livemake]")) { liveMake(); return; }
     if (e.target.closest("[data-libnew]")) { const n = await newFolder(); if (n) { S.libTab = n; await loadLibrary(); } return; }
     if (e.target.closest("[data-libren]")) {
       const to = (prompt(`Rename folder ${S.libTab} to`, S.libTab) || "").trim();
@@ -1410,7 +1416,7 @@ function switchTab(name) {
   if (name === "desktops") loadDesktops();
   if (name === "wallhaven") { whInit(); whCollections(); if (!WH.results.length) whSearch(false); }
   if (name === "settings") loadSettingsExtra();
-  liveTab(name === "live");
+  liveTab(name === "layout");
 }
 
 async function refresh() {
@@ -1427,7 +1433,7 @@ function listen() {
       if (what === "proposal") { const r = await api("/api/align"); if (r.proposal) { switchTab("layout"); showProposal(r.proposal); toast("A photo calibration result is ready"); } }
       if (["layout", "config", "monitors", "wallpaper"].includes(what) && !S.dragging && !isDirty()) await loadLayout();
       if (["library", "wallpaper"].includes(what) && $("#tab-library").classList.contains("active")) loadLibrary();
-      if (what === "live" && $("#tab-live").classList.contains("active")) liveLoad();
+      if (what === "live") liveChanged();
       if (what === "config" && $("#tab-settings").classList.contains("active")) loadSettingsExtra();
       else render();
     } catch { /* app restarting */ }

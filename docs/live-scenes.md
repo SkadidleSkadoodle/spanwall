@@ -6,20 +6,23 @@ as still wallpapers, so characters are the same physical size everywhere and lin
 bezels. It pauses itself when windows cover the monitors, when the PC is locked and when the
 displays are off.
 
-Turn it on in the editor's **Live** tab, from the tray ("Animated wallpaper"), or ask Claude
-(`sw_live`). Choosing a still wallpaper turns it off.
+In the editor, pick **Live** in the Layout tab's layout dropdown for the animation's controls
+and a preview of the whole desk. Every scene is also in **Library > Live wallpapers**, with a
+snapshot, favourites and bans; choose the **Live wallpapers** album to let the slideshow
+shuffle scenes. The tray ("Animated wallpaper") and Claude (`sw_live`) can turn it on too.
+Choosing a still wallpaper turns it off.
 
 ## Making your own
 
 Scenes are small JavaScript modules in `%USERPROFILE%\.spanwall\scenes\<name>.js`. Edit one
-in the Live tab ("Edit code"), in any editor (the wallpaper reloads when the file changes), or
+in the editor ("Edit code"), in any editor (the wallpaper reloads when the file changes), or
 ask Claude to write one (`sw_live_scene`). The built-in scenes (plasma, matrix, starfield,
 clock, donut) are good starting points.
 
 ```js
 export default {
   name: "Title", description: "One line.",
-  fps: 30,                        // frame cap (the Live tab can override)
+  fps: 30,                        // frame cap (the Live view can override)
   cell: { h: 4.2, aspect: 0.55 }, // character height in mm, width / height
   background: "#05070a",
   setup(g) {},                    // optional, once per grid (may be async)
@@ -46,11 +49,11 @@ export default {
 Tips: precompute palettes into `Uint32Array`s in `setup`, avoid allocating per cell, and
 work in mm (`c * g.cw`, `r * g.ch`) so a pattern is the same size on every monitor. Full
 blocks (`█ ▀ ▄ ▌ ▐`) and shades (`░ ▒ ▓`) join without gaps. A scene that throws shows its
-error on the wallpaper and in the Live tab.
+error on the wallpaper and in the Live view.
 
 ## From a GIF, video or picture
 
-The Live tab's converter (or `sw_live_convert`) turns a GIF, picture or video (videos need
+**Library > Live wallpapers > + From a GIF, video or picture** (or `sw_live_convert`) turns a GIF, picture or video (videos need
 `ffmpeg` on the PATH) into ASCII frames and a one-line scene that plays them.
 
 ## Working on scenes without Windows

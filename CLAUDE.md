@@ -105,7 +105,8 @@ Linux).
     glyph atlas (40x72 slots, 4 px padding, mip level <= 2; block and shade characters fill
     their slot so neighbours join). Frames paced by setTimeout then rAF (no 240 Hz wakeups);
     draw() returning false skips the upload and redraw. `?preview=1` draws the desk flat for
-    the editor's Live tab. Scene API: `mcpserver/live.go` SceneGuide (also docs/live-scenes.md).
+    the editor; `?snapshot=1` renders 1.5 s in a hidden frame and POSTs a PNG (Library cards).
+    Scene API: `mcpserver/live.go` SceneGuide (also docs/live-scenes.md).
   - The host is a child process, `spanwall live-host` (`host_windows.go`): WebView2 via
     github.com/jchv/go-webview2 (pure Go; its Embed log.Fatal()s on failure, hence the separate
     process). Window: on 24H2+ ("raised desktop", Progman has WS_EX_NOREDIRECTIONBITMAP) a
@@ -125,7 +126,13 @@ Linux).
     write; convert GIF/image/video via ffmpeg). Overlays hide it, layout and monitor changes
     reload it, applying a still wallpaper (apply, next/previous, Wallhaven apply) turns it
     off, the slideshow and day/night schedule pause while it is on. Active scene files are
-    polled every 2 s for hot reload. Tray item "Animated wallpaper". MCP: sw_live,
+    polled every 2 s for hot reload. Tray item "Animated wallpaper".
+  - Editor: "Live" is an entry of the Layout tab's layout dropdown (`live-ui.js`, `live-mode`
+    class swaps the toolbar and editor for the live controls and preview; saved layouts are
+    untouched). Library has a built-in "Live wallpapers" tab: snapshot cards (made by the editor,
+    `cache\live-thumbs\<name>.png` + `.ver` = scene version), fav/ban as `live:<name>` in
+    `Config.Ratings`, Apply, Edit code. Slideshow album "live" steps scenes (`liveStep`,
+    PickSlides with fav weight 3); history is cleared when switching to or from it. MCP: sw_live,
     sw_live_scene, sw_live_convert.
   - `tools/livedev`: serves the page with a made-up desk (any OS) to work on scenes.
   - Measured on the owner's 3 monitors (22 threads), uncovered, whole grid redrawn each frame:

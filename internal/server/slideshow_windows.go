@@ -27,6 +27,9 @@ func interval(ss config.Slideshow) time.Duration {
 // slideStep shows the next (or previous) image set.
 func (s *Server) slideStep(back bool) (any, error) {
 	s.endOverlay(false)
+	if s.liveAlbum() {
+		return s.liveStep(back)
+	}
 	v, err := s.session(func(sess *app.Session) (any, error) {
 		dir := wallpaperDir(sess.Cfg)
 		lib, err := app.Library(dir)
@@ -101,10 +104,13 @@ func (s *Server) slideStep(back bool) (any, error) {
 // slideshowLoop changes the wallpaper when the slideshow is due.
 func (s *Server) slideshowLoop() {
 	for range time.Tick(20 * time.Second) {
-		if s.liveOn() {
+		live := s.liveAlbum()
+		if s.liveOn() && !live {
 			continue // the animation is showing; changing the still wallpaper under it is wasted work
 		}
-		s.checkSchedule()
+		if !live {
+			s.checkSchedule()
+		}
 		due, _ := s.session(func(sess *app.Session) (any, error) {
 			ss := &sess.Cfg.Slideshow
 			if !ss.Enabled {
@@ -200,12 +206,17 @@ func (s *Server) setSlideshow(w http.ResponseWriter, r *http.Request) {
 				src = ""
 			case strings.EqualFold(src, "fav") || strings.EqualFold(src, "favourites") || strings.EqualFold(src, "favorites"):
 				src = "fav"
+			case strings.EqualFold(src, "live") || strings.EqualFold(src, "live wallpapers"):
+				src = "live"
 			default:
 				i := sess.Cfg.FolderIndex(src)
 				if i < 0 {
 					return nil, fmt.Errorf("no album called %q", src)
 				}
 				src = sess.Cfg.Folders[i].Name
+			}
+			if (src == "live") != (ss.Source == "live") {
+				ss.History = nil // scene names and image names don't mix
 			}
 			ss.Source = src
 		}
@@ -233,7 +244,7 @@ func (s *Server) slideshowNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.slideStep(req.Back)
-	if err == nil {
+	if err == nil && !s.liveAlbum() {
 		s.session(func(sess *app.Session) (any, error) { return nil, s.liveOff(sess) })
 	}
 	writeJSON(w, v, err)

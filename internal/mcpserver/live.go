@@ -27,12 +27,13 @@ A scene that throws shows its error on screen and in sw_live status (page.error)
 
 func registerLive(s *mcp.Server) {
 	type liveIn struct {
-		Action string   `json:"action,omitempty" jsonschema:"status (default), on, off or set"`
+		Action string   `json:"action,omitempty" jsonschema:"status (default), on, off, set, or rate"`
+		Rating string   `json:"rating,omitempty" jsonschema:"rate: fav, ban or none for the scene (favourites come up more in the live slideshow album, banned never)"`
 		Scene  string   `json:"scene,omitempty" jsonschema:"scene name (with on or set); see the scenes list in status"`
 		FPS    *int     `json:"fps,omitempty" jsonschema:"frame cap 1-60, 0 = the scene's own (with set or on)"`
 		CharMM *float64 `json:"charMM,omitempty" jsonschema:"character height in mm, 0 = the scene's own (with set or on)"`
 	}
-	add(s, "sw_live", "Animated ASCII wallpaper behind the desktop icons, spanning every monitor by the physical layout: status (scenes list, whether it runs, the page's fps and errors), on, off, or set the scene, frame rate and character size. It pauses itself whenever windows cover the monitors. Choosing a still wallpaper turns it off.",
+	add(s, "sw_live", "Animated ASCII wallpaper behind the desktop icons, spanning every monitor by the physical layout: status (scenes list, whether it runs, the page's fps and errors), on, off, or set the scene, frame rate and character size. It pauses itself whenever windows cover the monitors. Choosing a still wallpaper turns it off. The slideshow album \"live\" (sw_slideshow source=live) shuffles scenes; rate scenes fav or ban like wallpapers.",
 		func(in liveIn) (*mcp.CallToolResult, error) {
 			body := map[string]any{}
 			if in.Scene != "" {
@@ -52,6 +53,8 @@ func registerLive(s *mcp.Server) {
 				return postJSON("/api/live", body)
 			case "set":
 				return postJSON("/api/live", body)
+			case "rate":
+				return postJSON("/api/live/rate", map[string]any{"name": in.Scene, "rating": in.Rating})
 			}
 			return nil, fmt.Errorf("unknown action %q", in.Action)
 		})

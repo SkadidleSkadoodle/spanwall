@@ -174,7 +174,7 @@ func (s *Server) hotkey(action string) {
 	var err error
 	switch action {
 	case "next", "previous":
-		if _, err = s.slideStep(action == "previous"); err == nil {
+		if _, err = s.slideStep(action == "previous"); err == nil && !s.liveAlbum() {
 			s.session(func(sess *app.Session) (any, error) { return nil, s.liveOff(sess) })
 		}
 	case "pause":

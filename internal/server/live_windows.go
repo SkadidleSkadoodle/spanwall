@@ -263,6 +263,9 @@ func (s *Server) liveRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/live/scene", s.getScene)
 	mux.HandleFunc("POST /api/live/scene", s.setScene)
 	mux.HandleFunc("POST /api/live/convert", s.liveConvert)
+	mux.HandleFunc("POST /api/live/rate", s.liveRate)
+	mux.HandleFunc("GET /api/live/thumb", s.getLiveThumb)
+	mux.HandleFunc("POST /api/live/thumb", s.setLiveThumb)
 }
 
 func (s *Server) liveSceneFile(w http.ResponseWriter, r *http.Request) {
@@ -291,8 +294,15 @@ func (s *Server) liveInfo(sess *app.Session) map[string]any {
 	}
 	lastLog := s.live.lastLog
 	s.live.mu.Unlock()
+	var scenes []map[string]any
+	for _, si := range live.List(web.FS(), scenesDir()) {
+		ver := sceneVersion(si.Name)
+		scenes = append(scenes, map[string]any{"name": si.Name, "title": si.Title, "description": si.Description, "builtin": si.Builtin,
+			"user": si.User, "rating": sess.Cfg.Ratings[liveKey(si.Name)], "version": ver, "thumb": thumbFresh(si.Name, ver)})
+	}
 	out := map[string]any{"enabled": l.Enabled, "scene": l.SceneName(), "fps": l.FPS, "charMM": l.CharMM, "font": l.Font,
-		"running": running, "pid": pid, "scenes": live.List(web.FS(), scenesDir()), "scenesDir": scenesDir(), "lastLog": lastLog}
+		"running": running, "pid": pid, "scenes": scenes, "scenesDir": scenesDir(), "lastLog": lastLog,
+		"album": sess.Cfg.Slideshow.Source == "live"}
 	if rep != nil && time.Since(at) < time.Minute {
 		out["page"] = rep
 	}

@@ -238,7 +238,7 @@ func register(s *mcp.Server) {
 		IntervalMin int    `json:"intervalMin,omitempty" jsonschema:"minutes between changes (with set or start)"`
 		Order       string `json:"order,omitempty" jsonschema:"shuffle or name (with set or start)"`
 		Mode        string `json:"mode,omitempty" jsonschema:"span, groups or per-display (with set or start)"`
-		Source      string `json:"source,omitempty" jsonschema:"album to shuffle (with set or start): all, fav (favourites) or a library folder name"`
+		Source      string `json:"source,omitempty" jsonschema:"album to shuffle (with set or start): all, fav (favourites), live (animated scenes) or a library folder name"`
 	}
 	add(s, "sw_slideshow", "Slideshow from the wallpaper folder: status, next, previous (from history), start, stop, or set interval/order/mode.",
 		func(in slideIn) (*mcp.CallToolResult, error) {

@@ -6,7 +6,9 @@
 //   &scene=name       preview another scene than the active one
 
 const Q = new URLSearchParams(location.search);
-const PREVIEW = Q.has("preview");
+const SNAP = Q.has("snapshot"); // the library's scene pictures: render a moment, save a PNG, stop
+const PREVIEW = Q.has("preview") || SNAP;
+let stopped = false;
 const host = document.getElementById("views");
 
 const SW = 40, SH = 72, PAD = 4, AW = 2048, AH = 2048; // atlas: slot size, padding, size
@@ -203,7 +205,7 @@ function makeView(x, y, w, h, meshes, i) {
   cv.width = Math.round(w); cv.height = Math.round(h);
   Object.assign(cv.style, { position: "absolute", left: x / dpr + "px", top: y / dpr + "px", width: w / dpr + "px", height: h / dpr + "px" });
   host.appendChild(cv);
-  const gl = cv.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: "low-power" });
+  const gl = cv.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: "low-power", preserveDrawingBuffer: SNAP });
   if (!gl) throw new Error("WebGL2 is not available");
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const p = gl.createProgram();
@@ -344,6 +346,17 @@ async function load() {
   t0 = performance.now(); next = t0;
   frame(t0, true);
   if (!readySent) { readySent = true; try { window.chrome.webview.postMessage("ready"); } catch (e) { /* preview */ } }
+  if (SNAP) setTimeout(snapshot, 1500);
+}
+
+function snapshot() {
+  const name = st.scene, ver = st.version;
+  const done = (ok) => { stopped = true; try { parent.postMessage({ snapshot: name, ok }, location.origin); } catch (e) { /* not in a frame */ } };
+  views[0].cv.toBlob((b) => {
+    if (!b) return done(false);
+    fetch(`/api/live/thumb?name=${encodeURIComponent(name)}&ver=${encodeURIComponent(ver)}`, { method: "POST", body: b })
+      .then((r) => done(r.ok)).catch(() => done(false));
+  }, "image/png");
 }
 
 function showError(e) {
@@ -359,7 +372,8 @@ function showError(e) {
 // Frames are paced by a timer, then drawn in the next animation frame, so a
 // 240 Hz monitor doesn't wake the page 240 times a second.
 function schedule() {
-  if (timer || raf || !anySeen()) return;
+  if (stopped || timer || raf || !anySeen()) return;
+  if (SNAP) { timer = setTimeout(() => { timer = 0; frame(performance.now()); }, Math.max(0, next - performance.now())); return; } // hidden frames get no rAF
   timer = setTimeout(() => { timer = 0; raf = requestAnimationFrame(frame); }, Math.max(0, next - performance.now() - 3));
 }
 
