@@ -92,6 +92,14 @@ func className(h uintptr) string {
 	return windows.UTF16ToString(b)
 }
 
+var pGetWindowTextW = user32.NewProc("GetWindowTextW")
+
+func windowText(h uintptr) string {
+	b := make([]uint16, 80)
+	pGetWindowTextW.Call(h, uintptr(unsafe.Pointer(&b[0])), 80)
+	return windows.UTF16ToString(b)
+}
+
 func winRect(h uintptr) rect {
 	var r rect
 	pGetWindowRect.Call(h, uintptr(unsafe.Pointer(&r)))
@@ -389,11 +397,11 @@ func (h *host) tick() {
 			h.fixZ()
 		}
 	}
-	mons, covered := coverage()
+	mons, covered, why := coverage()
 	b, _ := json.Marshal(covered)
 	if s := string(b); s != h.lastCovered {
 		h.lastCovered = s
-		log.Printf("covered: %d of %d monitors %s", len(covered), len(mons), s)
+		log.Printf("covered: %d of %d monitors %s by %q", len(covered), len(mons), s, why)
 		h.eval("spanwall.covered(" + s + ")")
 	}
 	h.allCovered = len(covered) == len(mons) && len(mons) > 0
@@ -432,8 +440,9 @@ var shellClasses = map[string]bool{"Progman": true, "WorkerW": true, "Shell_Tray
 // coverage returns the monitors and those almost entirely hidden by a window
 // (a maximised app, a full-screen video, or every monitor during a full-screen
 // game), as [x, y, w, h] rects.
-func coverage() (mons []rect, covered [][4]int32) {
+func coverage() (mons []rect, covered [][4]int32, why []string) {
 	mons, _ = enumMonitors()
+	reason := make([]string, len(mons))
 	cov := make([]bool, len(mons))
 	var qs uint32
 	// A full-screen game pauses everything (leave it the GPU). Browsers
@@ -441,7 +450,7 @@ func coverage() (mons []rect, covered [][4]int32) {
 	// Chromium and Firefox windows only cover their own monitor (below).
 	if r, _, _ := pSHQueryUserNotification.Call(uintptr(unsafe.Pointer(&qs))); r == 0 && qs == 3 && !browserClasses[className(foreground())] {
 		for i := range cov {
-			cov[i] = true
+			cov[i], reason[i] = true, "full-screen game "+className(foreground())
 		}
 	} else {
 		self := uint32(os.Getpid())
@@ -497,6 +506,7 @@ func coverage() (mons []rect, covered [][4]int32) {
 				return 1
 			}
 			cov[best] = true
+			reason[best] = fmt.Sprintf("%s %q %.2f", className(w), windowText(w), frac)
 			return 1
 		})
 		pEnumWindows.Call(ecb, 0)
@@ -504,9 +514,10 @@ func coverage() (mons []rect, covered [][4]int32) {
 	for i, m := range mons {
 		if cov[i] {
 			covered = append(covered, [4]int32{m.L, m.T, m.w(), m.h()})
+			why = append(why, reason[i])
 		}
 	}
-	return mons, covered
+	return mons, covered, why
 }
 
 // MonitorRects returns every monitor's rectangle (x, y, w, h) in physical
