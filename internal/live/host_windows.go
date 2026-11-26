@@ -419,6 +419,12 @@ func (h *host) updateVisible() {
 
 // ---- coverage ---------------------------------------------------------------------
 
+var browserClasses = map[string]bool{"Chrome_WidgetWin_1": true, "Chrome_WidgetWin_0": true, "MozillaWindowClass": true, "ApplicationFrameWindow": true}
+
+var pGetForegroundWindow = user32.NewProc("GetForegroundWindow")
+
+func foreground() uintptr { w, _, _ := pGetForegroundWindow.Call(); return w }
+
 var shellClasses = map[string]bool{"Progman": true, "WorkerW": true, "Shell_TrayWnd": true, "Shell_SecondaryTrayWnd": true,
 	"Windows.UI.Core.CoreWindow": true, "XamlExplorerHostIslandWindow": true, "TopLevelWindowForOverflowXamlIsland": true,
 	"SpanwallLive": true, "SpanwallLiveMsg": true, "NotifyIconOverflowWindow": true}
@@ -430,9 +436,10 @@ func coverage() (mons []rect, covered [][4]int32) {
 	mons, _ = enumMonitors()
 	cov := make([]bool, len(mons))
 	var qs uint32
-	// A full-screen D3D game pauses everything (leave it the GPU); a
-	// full-screen video or app covers only its own monitor, found below.
-	if r, _, _ := pSHQueryUserNotification.Call(uintptr(unsafe.Pointer(&qs))); r == 0 && qs == 3 {
+	// A full-screen game pauses everything (leave it the GPU). Browsers
+	// playing full-screen video report the same D3D full-screen state, so
+	// Chromium and Firefox windows only cover their own monitor (below).
+	if r, _, _ := pSHQueryUserNotification.Call(uintptr(unsafe.Pointer(&qs))); r == 0 && qs == 3 && !browserClasses[className(foreground())] {
 		for i := range cov {
 			cov[i] = true
 		}
