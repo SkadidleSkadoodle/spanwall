@@ -30,6 +30,7 @@ import (
 	"github.com/SkadidleSkadoodle/spanwall/internal/wallhaven"
 	"github.com/SkadidleSkadoodle/spanwall/internal/wallpaper"
 	"github.com/SkadidleSkadoodle/spanwall/internal/web"
+	"github.com/SkadidleSkadoodle/spanwall/internal/win"
 )
 
 // Addr is where the background app listens. Localhost only.
@@ -52,6 +53,10 @@ type Server struct {
 	syncMu   sync.Mutex // one Wallhaven sync at a time
 	sourceMu sync.Mutex // one sources run at a time
 	lastWarn string     // last warning notified (to avoid repeats)
+
+	dw      *wallpaper.DesktopWallpaper // COM thread only
+	fixMu   sync.Mutex                  // one Explorer fix at a time
+	lastFix time.Time                   // last automatic Explorer restart
 }
 
 // Run serves until shutdown. It returns an error if another instance is
@@ -100,15 +105,46 @@ func Run() error {
 
 // comThread runs every Windows call on one locked OS thread.
 func (s *Server) comThread(ready chan<- error) {
-	dw, done, err := app.OpenCOM()
+	cleanup, err := win.Init()
+	if err == nil {
+		s.dw, err = wallpaper.New()
+	}
 	ready <- err
 	if err != nil {
+		cleanup()
 		return
 	}
-	defer done()
+	defer func() {
+		if s.dw != nil {
+			s.dw.Close()
+		}
+		cleanup()
+	}()
 	for f := range s.work {
-		f(dw)
+		if s.dw == nil {
+			s.reconnectCOM()
+		}
+		f(s.dw)
 	}
+}
+
+// reconnectCOM replaces a dead wallpaper object (Explorer restarted or
+// crashed). Runs on the COM thread. Returns nil if Explorer isn't back yet.
+func (s *Server) reconnectCOM() *wallpaper.DesktopWallpaper {
+	if s.dw != nil {
+		s.dw.Close()
+		s.dw = nil
+	}
+	for i := 0; i < 10; i++ {
+		if dw, err := wallpaper.New(); err == nil {
+			s.dw = dw
+			s.log.Printf("reconnected to Explorer's wallpaper object")
+			return dw
+		}
+		time.Sleep(time.Second)
+	}
+	s.log.Printf("Explorer's wallpaper object is unavailable")
+	return nil
 }
 
 // session runs fn on the COM thread with a fresh session.
@@ -124,12 +160,24 @@ func (s *Server) session(fn func(*app.Session) (any, error)) (any, error) {
 				ch <- result{nil, fmt.Errorf("internal error: %v", r)}
 			}
 		}()
-		sess, err := app.NewSession(dw)
-		if err != nil {
-			ch <- result{nil, err}
+		if dw == nil {
+			ch <- result{nil, errors.New("Explorer's wallpaper object is unavailable (is Explorer running?)")}
 			return
 		}
-		v, err := fn(sess)
+		run := func(dw *wallpaper.DesktopWallpaper) (any, error) {
+			sess, err := app.NewSession(dw)
+			if err != nil {
+				return nil, err
+			}
+			return fn(sess)
+		}
+		v, err := run(dw)
+		if wallpaper.Disconnected(err) {
+			// Explorer restarted under us: reconnect and try once more.
+			if dw = s.reconnectCOM(); dw != nil {
+				v, err = run(dw)
+			}
+		}
 		ch <- result{v, err}
 		// Rendering briefly needs a few hundred MB; hand it back to Windows
 		// right away so the idle app stays small.
@@ -154,6 +202,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/preview", s.preview)
 	mux.HandleFunc("GET /api/thumb", s.thumb)
 	mux.HandleFunc("POST /api/identify", s.identifyHandler)
+	mux.HandleFunc("POST /api/fix-explorer", s.fixExplorerHandler)
 	mux.HandleFunc("POST /api/calibrate", s.calibrateHandler)
 	mux.HandleFunc("POST /api/photo-pattern", s.photoPattern)
 	mux.HandleFunc("POST /api/align", s.align)
@@ -231,29 +280,31 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		hasProposal := s.proposal != nil
 		s.mu.Unlock()
 		return map[string]any{
-			"version":       app.Version,
-			"pid":           os.Getpid(),
-			"uptime":        time.Since(s.started).Round(time.Second).String(),
-			"monitors":      len(sess.Monitors),
-			"activeLayout":  sess.Cfg.ActiveLayout,
-			"layouts":       sess.Cfg.LayoutNames(),
-			"lastApplied":   sess.Cfg.LastApplied,
-			"wallpaperDir":  wallpaperDir(sess.Cfg),
-			"configDir":     sess.CfgDir,
-			"autoSwitch":    sess.Cfg.AutoSwitchOn(),
-			"desktopMode":   desktopMode(sess.Cfg),
-			"overlay":       ov,
-			"proposal":      hasProposal,
-			"photoPrior":    sess.Cfg.Photo != nil,
-			"slideshow":     slideshowInfo(sess),
-			"groups":        groupNames(sess),
-			"autostart":     autostartOn(),
-			"tray":          sess.Cfg.Tray == nil || *sess.Cfg.Tray,
-			"hotkeys":       hotkeysFor(sess.Cfg),
-			"layoutFit":     layoutFit(sess),
-			"extension":     extensionPath(),
-			"wallhavenUser": sess.Cfg.WallhavenUser,
-			"wallhavenKey":  wallhaven.Key != "",
+			"version":         app.Version,
+			"pid":             os.Getpid(),
+			"uptime":          time.Since(s.started).Round(time.Second).String(),
+			"monitors":        len(sess.Monitors),
+			"windowsMonitors": sess.WindowsMonitors,
+			"explorerStale":   sess.Stale(),
+			"activeLayout":    sess.Cfg.ActiveLayout,
+			"layouts":         sess.Cfg.LayoutNames(),
+			"lastApplied":     sess.Cfg.LastApplied,
+			"wallpaperDir":    wallpaperDir(sess.Cfg),
+			"configDir":       sess.CfgDir,
+			"autoSwitch":      sess.Cfg.AutoSwitchOn(),
+			"desktopMode":     desktopMode(sess.Cfg),
+			"overlay":         ov,
+			"proposal":        hasProposal,
+			"photoPrior":      sess.Cfg.Photo != nil,
+			"slideshow":       slideshowInfo(sess),
+			"groups":          groupNames(sess),
+			"autostart":       autostartOn(),
+			"tray":            sess.Cfg.Tray == nil || *sess.Cfg.Tray,
+			"hotkeys":         hotkeysFor(sess.Cfg),
+			"layoutFit":       layoutFit(sess),
+			"extension":       extensionPath(),
+			"wallhavenUser":   sess.Cfg.WallhavenUser,
+			"wallhavenKey":    wallhaven.Key != "",
 			"wallhavenSync": map[string]any{"enabled": sess.Cfg.WallhavenSync.Enabled, "collection": syncLabel(sess.Cfg),
 				"lastRun": sess.Cfg.WallhavenSync.LastRun, "lastResult": sess.Cfg.WallhavenSync.LastResult},
 			"smartFrame": sess.Cfg.SmartFrameOn(),

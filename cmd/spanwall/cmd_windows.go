@@ -18,6 +18,7 @@ import (
 	"github.com/SkadidleSkadoodle/spanwall/internal/install"
 	"github.com/SkadidleSkadoodle/spanwall/internal/launch"
 	"github.com/SkadidleSkadoodle/spanwall/internal/server"
+	"github.com/SkadidleSkadoodle/spanwall/internal/win"
 )
 
 // withSession opens COM and a session for one command.
@@ -64,6 +65,10 @@ func cmdDisplays(args []string) error {
 		if !m.Attached {
 			fmt.Printf("-  %-16s %-22s not attached\n", m.Name, m.ID)
 		}
+	}
+	if seen, total := len(app.AttachedSorted(ms)), win.MonitorCount(); seen < total {
+		fmt.Fprintf(os.Stderr, "\nwarning: Explorer only sees %d of the %d monitors Windows shows (its monitor list is stale).\n"+
+			"Pick \"Fix monitors\" in Spanwall's tray menu, or restart Windows Explorer.\n", seen, total)
 	}
 	return nil
 }

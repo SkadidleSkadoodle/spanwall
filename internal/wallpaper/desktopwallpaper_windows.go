@@ -68,11 +68,33 @@ func New() (*DesktopWallpaper, error) {
 	return &DesktopWallpaper{ptr: p}, nil
 }
 
+// HRESULTError is a failed COM call.
+type HRESULTError uint32
+
+func (e HRESULTError) Error() string { return fmt.Sprintf("wallpaper: HRESULT 0x%08X", uint32(e)) }
+
+// Disconnected reports whether err means the wallpaper object's server
+// (Explorer) went away, for example after Explorer restarted. The object is
+// dead then and must be created again.
+func Disconnected(err error) bool {
+	var h HRESULTError
+	if !errors.As(err, &h) {
+		return false
+	}
+	switch uint32(h) {
+	case 0x800706BA, // RPC_S_SERVER_UNAVAILABLE
+		0x800706BE, // RPC_S_CALL_FAILED
+		0x80010108: // RPC_E_DISCONNECTED
+		return true
+	}
+	return false
+}
+
 func (d *DesktopWallpaper) call(slot int, args ...uintptr) (uint32, error) {
 	vtbl := *(**[19]uintptr)(d.ptr)
 	hr, _, _ := syscall.SyscallN(vtbl[slot], append([]uintptr{uintptr(d.ptr)}, args...)...)
 	if int32(hr) < 0 {
-		return uint32(hr), fmt.Errorf("wallpaper: HRESULT 0x%08X", uint32(hr))
+		return uint32(hr), HRESULTError(hr)
 	}
 	return uint32(hr), nil
 }

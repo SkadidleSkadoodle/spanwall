@@ -38,6 +38,14 @@ Linux).
   Desktop modes same/individual/panorama; per-desktop slices cached in cache\desktops.
 - Monitor watcher: polls GetSystemMetrics signature every 2 s; on change picks the saved
   layout matching the attached monitors (ChooseLayout) and re-applies.
+- Stale Explorer (`server/explorer_windows.go`, `win/explorer_windows.go`): after a dock
+  reconnect Explorer's IDesktopWallpaper table can stay stale (blank slots, old port paths,
+  no RECT for live monitors), so it sees fewer monitors than SM_CMONITORS (`Session.Stale`).
+  The watcher waits ~15 s for it to catch up, never spans onto the partial set, and restarts
+  Explorer itself only if no File Explorer windows are open and not within the last hour;
+  otherwise a tray warning points to "Fix monitors" (`POST /api/fix-explorer`, MCP
+  `sw_fix_monitors`). The COM thread recreates the wallpaper object on RPC disconnect
+  errors (`wallpaper.Disconnected`), so an Explorer restart doesn't break the app.
 - Data: `%USERPROFILE%\.spanwall` (config.json, cache\, inbox\ for uploaded photos,
   spanwall.log). Not AppData: see below.
 - `internal/vision` photo calibration, pure Go:

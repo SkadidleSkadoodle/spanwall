@@ -46,6 +46,10 @@ func List(dw *wallpaper.DesktopWallpaper) ([]Monitor, error) {
 		if err != nil {
 			return nil, err
 		}
+		if path == "" {
+			// A stale Explorer can report a blank slot; it is not a monitor.
+			continue
+		}
 		m := Monitor{DevicePath: path}
 		pnp, instance := splitDevicePath(path)
 		m.Name, m.ID = pnp, pnp+"-"+instance

@@ -48,6 +48,7 @@ const (
 	menuIdentify
 	menuFavorite
 	menuBan
+	menuFixMonitors
 	menuQuit
 )
 
@@ -122,6 +123,7 @@ func (s *Server) trayMenu() []tray.Item {
 		{ID: menuPrev, Label: "Previous wallpaper"},
 		{ID: menuSlideshow, Label: "Slideshow", Checked: on},
 		{ID: menuIdentify, Label: "Identify monitors"},
+		{ID: menuFixMonitors, Label: "Fix monitors (restarts Explorer)"},
 		{Separator: true},
 		{ID: menuFavorite, Label: "Favourite this wallpaper"},
 		{ID: menuBan, Label: "Never show this wallpaper again"},
@@ -148,6 +150,16 @@ func (s *Server) trayAction(id int) {
 		s.hotkey("favorite")
 	case menuBan:
 		s.hotkey("ban")
+	case menuFixMonitors:
+		go func() {
+			res, err := s.fixExplorer()
+			s.log.Printf("explorer fix (tray): %v %v", res, err)
+			if err != nil {
+				s.notify("Couldn't fix monitors", err.Error(), true)
+			} else {
+				s.notify("Monitors fixed", fmt.Sprintf("Explorer sees all %v monitors again", res["windowsShows"]), false)
+			}
+		}()
 	case menuQuit:
 		s.stop()
 	}

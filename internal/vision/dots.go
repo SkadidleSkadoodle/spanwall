@@ -296,7 +296,40 @@ func dropIsolated(bs []Blob) []Blob {
 	}
 	s := append([]float64(nil), nn...)
 	sort.Float64s(s)
-	link := 2.2 * s[len(s)/2]
+	step := s[len(s)/2]
+	link := 2.2 * step
+	// A lone spot near the grid (a status LED below a screen's corner) is
+	// within linking range of the outer dots, but a real dot always has a
+	// neighbour about one grid step away. Drop spots without one first, or
+	// one becomes a grid corner and the whole fit fails.
+	var near []Blob
+	for i, b := range bs {
+		if nn[i] <= 1.6*step {
+			near = append(near, b)
+		}
+	}
+	if len(near) >= 4 {
+		bs = near
+	}
+	// A spot much closer to a dot than the grid step (a power LED right by
+	// a corner dot) is not a dot either: of such a pair keep the bigger one.
+	var spaced []Blob
+	for i, a := range bs {
+		keep := true
+		for j, b := range bs {
+			if i != j && math.Hypot(a.C.X-b.C.X, a.C.Y-b.C.Y) < 0.6*step &&
+				(b.Area > a.Area || (b.Area == a.Area && j < i)) {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			spaced = append(spaced, a)
+		}
+	}
+	if len(spaced) >= 4 {
+		bs = spaced
+	}
 	comp := make([]int, len(bs))
 	for i := range comp {
 		comp[i] = -1
@@ -370,12 +403,53 @@ func MatchGrid(blobs []Blob, g Grid) (GridMatch, error) {
 	tr := ext(func(p Pt) float64 { return p.X - p.Y })
 	bl := ext(func(p Pt) float64 { return p.Y - p.X })
 	n := len(g.Points)
-	h, err := FitHomography(
-		[]Pt{g.Points[0], g.Points[g.Cols-1], g.Points[n-g.Cols], g.Points[n-1]},
-		[]Pt{tl, tr, bl, br})
-	if err != nil {
-		return res, err
+	// The extreme blobs are usually the corner dots, but a corner dot the
+	// camera washed out (or that classified as another colour) makes the
+	// extreme one row or column in. Try those readings too and keep the fit
+	// that matches the most dots; a wrong start slips a whole row or column.
+	at := func(r, c int) Pt { return g.Points[r*g.Cols+c] }
+	R, C := g.Rows, g.Cols
+	cands := [4][3]Pt{
+		{at(0, 0), at(0, 1), at(1, 0)},
+		{at(0, C-1), at(0, C-2), at(1, C-1)},
+		{at(R-1, 0), at(R-2, 0), at(R-1, 1)},
+		{at(R-1, C-1), at(R-2, C-1), at(R-1, C-2)},
 	}
+	found := false
+	for _, a := range cands[0] {
+		for _, b := range cands[1] {
+			for _, c := range cands[2] {
+				for _, d := range cands[3] {
+					h, err := FitHomography([]Pt{a, b, c, d}, []Pt{tl, tr, bl, br})
+					if err != nil {
+						continue
+					}
+					m, ok := refineGrid(bs, g, h)
+					if !ok {
+						continue
+					}
+					if !found || m.Matched > res.Matched || (m.Matched == res.Matched && m.RMS < res.RMS) {
+						m.Expected = res.Expected
+						res, found = m, true
+					}
+				}
+			}
+		}
+	}
+	if !found {
+		return res, errors.New("grid didn't fit")
+	}
+	if res.Matched < n*6/10 {
+		return res, errors.New("too few dots matched; is the whole screen in the photo?")
+	}
+	return res, nil
+}
+
+// refineGrid matches grid dots to blobs starting from h and refits, a few
+// rounds. ok is false when fewer than 6 dots match.
+func refineGrid(bs []Blob, g Grid, h H) (GridMatch, bool) {
+	var res GridMatch
+	var err error
 	for iter := 0; iter < 4; iter++ {
 		// Distance between neighbouring predicted dots sets the match radius.
 		p0, p1, p2 := h.Apply(g.Points[0]), h.Apply(g.Points[1]), h.Apply(g.Points[g.Cols])
@@ -400,16 +474,13 @@ func MatchGrid(blobs []Blob, g Grid) (GridMatch, error) {
 			}
 		}
 		if len(src) < 6 {
-			return res, fmt.Errorf("grid didn't fit (%d of %d dots)", len(src), n)
+			return res, false
 		}
 		if h, err = FitHomography(src, dst); err != nil {
-			return res, err
+			return res, false
 		}
 		res.H, res.Matched, res.RMS = h, len(src), RMS(h, src, dst)
 		res.Src, res.Dst = src, dst
 	}
-	if res.Matched < n*6/10 {
-		return res, errors.New("too few dots matched; is the whole screen in the photo?")
-	}
-	return res, nil
+	return res, true
 }

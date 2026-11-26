@@ -46,6 +46,12 @@ func (s *Server) watchMonitors() {
 		}
 		last = sig
 		s.endOverlay(false)
+		if ok, seen, total := s.waitExplorer(); !ok {
+			// Don't span onto the monitors a stale Explorer still knows.
+			s.explorerStale(seen, total)
+			s.events.publish("monitors")
+			continue
+		}
 		v, err := s.session(func(sess *app.Session) (any, error) { return s.monitorsChanged(sess) })
 		s.log.Printf("monitors changed (%s): %v %v", sig, v, err)
 		s.events.publish("monitors")

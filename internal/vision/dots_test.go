@@ -83,3 +83,31 @@ func TestDetectAndMatchThreeMonitors(t *testing.T) {
 		t.Logf("monitor %d: %d/%d dots, rms %.2f px", i, gm.Matched, gm.Expected, gm.RMS)
 	}
 }
+
+// A washed-out corner dot plus status LEDs near the corners must not throw
+// the grid off (photo of Nov 20: Dell LED below its corner, Acer power LED
+// above its corner, Acer corner dot not classified).
+func TestMatchGridLEDsAndMissingCorner(t *testing.T) {
+	g := DotGrid(3440, 1440)
+	h := H{0.3, 0.01, 600, -0.012, 0.29, 250, 0.00001, 0.000004, 1}
+	var bs []Blob
+	n := len(g.Points)
+	for i, p := range g.Points {
+		if i == n-1 {
+			continue // bottom-right dot missing
+		}
+		bs = append(bs, Blob{C: h.Apply(p), Area: 1000})
+	}
+	step := h.Apply(g.Points[1]).X - h.Apply(g.Points[0]).X
+	br, tl := h.Apply(g.Points[n-1]), h.Apply(g.Points[0])
+	bs = append(bs,
+		Blob{C: Pt{br.X + 0.8*step, br.Y + 1.2*step}, Area: 400}, // LED below the corner
+		Blob{C: Pt{tl.X + 0.1*step, tl.Y - 0.5*step}, Area: 300}) // power LED by the corner
+	gm, err := MatchGrid(bs, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gm.Matched != n-1 || gm.RMS > 0.01 {
+		t.Fatalf("matched %d of %d, rms %.3f", gm.Matched, n, gm.RMS)
+	}
+}

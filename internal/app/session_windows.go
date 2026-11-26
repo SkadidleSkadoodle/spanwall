@@ -28,7 +28,17 @@ type Session struct {
 	Monitors []display.Monitor // attached, ordered by Windows position
 	Cfg      *config.Config
 	CfgDir   string
+
+	// WindowsMonitors is how many monitors Windows itself is showing.
+	// Monitors comes from Explorer, which can fall behind after a dock
+	// reconnect; see Stale.
+	WindowsMonitors int
 }
+
+// Stale reports whether Explorer's monitor table is behind Windows: it sees
+// fewer attached monitors than Windows shows, so a span would only reach
+// some of them.
+func (s *Session) Stale() bool { return len(s.Monitors) < s.WindowsMonitors }
 
 // OpenCOM initialises COM and DPI awareness on the calling thread (which
 // stays locked to it) and creates the wallpaper object.
@@ -59,7 +69,7 @@ func NewSession(dw *wallpaper.DesktopWallpaper) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-	return &Session{DW: dw, Monitors: AttachedSorted(all), Cfg: cfg, CfgDir: dir}, nil
+	return &Session{DW: dw, Monitors: AttachedSorted(all), Cfg: cfg, CfgDir: dir, WindowsMonitors: win.MonitorCount()}, nil
 }
 
 // Save writes the config.

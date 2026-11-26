@@ -126,6 +126,11 @@ func register(s *mcp.Server) {
 			return postJSON("/api/identify", map[string]any{"seconds": sec, "stop": in.Stop})
 		})
 
+	add(s, "sw_fix_monitors", "Restart Windows Explorer so it sees every monitor again, then re-apply the wallpaper. Use when sw_status shows explorerStale (Explorer sees fewer monitors than Windows, usually after a dock reconnect). Closes open File Explorer windows.",
+		func(struct{}) (*mcp.CallToolResult, error) {
+			return postJSON("/api/fix-explorer", map[string]any{})
+		})
+
 	type calIn struct {
 		Stop   bool   `json:"stop,omitempty" jsonschema:"true to remove the pattern and restore the wallpaper"`
 		Layout string `json:"layout,omitempty" jsonschema:"layout name; empty means the active layout"`
