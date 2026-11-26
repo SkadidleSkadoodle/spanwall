@@ -224,9 +224,12 @@ function liveRenderSide() {
   if (!st) { side.innerHTML = `<div class="empty">Loading…</div>`; return; }
   if (side.dataset.mode !== "live") {
     side.dataset.mode = "live"; side.dataset.for = ""; side.classList.add("live-side");
-    side.innerHTML = `<div id="liveInfo"></div><div id="liveSettings"></div><div id="liveSched"></div><h4>Scenes</h4><div id="livePicks" class="picks"></div>
-      <div class="note">Scenes are files in <span id="liveDirNote"></span>: edit them there, here, or ask Claude to write one. Favourites, bans and the slideshow are in Library &gt; Live wallpapers.</div>`;
+    side.innerHTML = `<div class="sidetabs"><button data-ltab="settings">Settings</button><button data-ltab="scenes">Scenes</button></div>
+      <div data-lpane="settings"><div id="liveInfo"></div><div id="liveSettings"></div><div id="liveSched"></div></div>
+      <div data-lpane="scenes"><div id="livePicks" class="picks"></div>
+      <div class="note">Scenes are files in <span id="liveDirNote"></span>: edit them there, here, or ask Claude to write one. Favourites, bans and the slideshow are in Library &gt; Live wallpapers.</div></div>`;
   }
+  liveShowTab();
   const s = liveCur() || { name: st.scene, title: st.scene };
   $("#liveDirNote").textContent = st.scenesDir;
   const f = S.frames["live:" + st.scene];
@@ -269,11 +272,20 @@ function liveRenderSide() {
   }
 }
 
+function liveShowTab() {
+  let t = "settings";
+  try { t = localStorage.getItem("spanwall.liveTab") || t; } catch (e) { /* ignore */ }
+  for (const b of $$("[data-ltab]")) b.classList.toggle("active", b.dataset.ltab === t);
+  for (const p of $$("[data-lpane]")) p.classList.toggle("hidden", p.dataset.lpane !== t);
+}
+
 $("#side").addEventListener("click", async (e) => {
   if (!LV.on) return;
+  const tb = e.target.closest("[data-ltab]");
+  if (tb) { try { localStorage.setItem("spanwall.liveTab", tb.dataset.ltab); } catch (err) { /* ignore */ } liveShowTab(); return; }
   const pk = e.target.closest("[data-lpick]"), sd = e.target.closest("[data-lside]"), rt = e.target.closest("[data-lrate]");
   try {
-    if (pk) await livePick(pk.dataset.lpick);
+    if (pk) { await livePick(pk.dataset.lpick); try { localStorage.setItem("spanwall.liveTab", "settings"); } catch (err) { /* ignore */ } liveShowTab(); }
     else if (sd && sd.dataset.lside === "edit") await liveOpenCode(LV.st.scene);
     else if (sd && sd.dataset.lside === "dup") await liveDuplicate(LV.st.scene);
     else if (sd && sd.dataset.lside === "show") await liveSet({ enabled: true }, "Showing on the desktop");
