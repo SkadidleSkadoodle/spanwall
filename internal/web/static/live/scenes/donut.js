@@ -18,7 +18,7 @@ export default {
   draw(g, t) {
     const P = g.params, { cols, chars, fg } = g, zb = this.z, lum = this.lum, m = g.main;
     chars.fill(32); zb.fill(0);
-    const A = t * 0.9 * P.speed, B = t * 0.45 * P.speed, cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
+    const T = g.phase("T", P.speed), A = T * 0.9, B = T * 0.45, cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
     const hCells = (m.r1 - m.r0) * P.size; // radius on screen, in rows
     const kx = (hCells * g.ch) / g.cw, ky = hCells; // round in mm
     for (let j = 0; j < 6.283; j += 0.035) {

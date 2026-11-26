@@ -24,7 +24,7 @@ export default function player(file, opts = {}) {
     draw(g, t) {
       const clip = this.clip, P = g.params;
       if (!clip) return false;
-      let ms = (t * 1000 * P.speed) % clip.total, k = 0;
+      let ms = (g.phase("T", P.speed) * 1000) % clip.total, k = 0;
       while (k < clip.frames.length - 1 && ms >= clip.frames[k].ms) ms -= clip.frames[k++].ms;
       if (k === this.last && this.pv === g.paramsVersion) return false;
       this.last = k; this.pv = g.paramsVersion;

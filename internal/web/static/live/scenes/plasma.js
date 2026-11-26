@@ -28,7 +28,7 @@ export default {
     this.ver = -1;
   },
   draw(g, t) {
-    const P = g.params, k = 1 / P.size, T = t * P.speed;
+    const P = g.params, k = 1 / P.size, T = g.phase("T", P.speed);
     if (this.ver !== g.paramsVersion) { // the radial term's phase per cell depends on the wave size
       this.ver = g.paramsVersion;
       const cx = g.width / 2, cy = g.height / 2;
@@ -37,7 +37,7 @@ export default {
       }
     }
     const { cols, rows, chars, fg, mask, cw, ch } = g, { pal, ramp, sin, dist, colA, colS, colC, rowA, rowS, rowC } = this;
-    for (let i = 0; i < 256; i++) pal[i] = g.hsl(P.hue + (i / 255) * P.range + t * P.drift, 0.8, Math.min(0.95, (0.28 + (i / 255) * 0.5) * P.bright));
+    for (let i = 0; i < 256; i++) pal[i] = g.hsl(P.hue + (i / 255) * P.range + g.phase("drift", P.drift), 0.8, Math.min(0.95, (0.28 + (i / 255) * 0.5) * P.bright));
     for (let c = 0; c < cols; c++) { const x = c * cw * k; colA[c] = Math.sin(x / 83 + T * 0.7); colS[c] = Math.sin(x / 120 + T * 0.5); colC[c] = Math.cos(x / 120 + T * 0.5); }
     for (let r = 0; r < rows; r++) { const y = r * ch * k; rowA[r] = Math.sin(y / 61 - T * 0.9); rowS[r] = Math.sin(y / 120); rowC[r] = Math.cos(y / 120); }
     const shift = Math.round((((-T % TAU) + TAU) / TAU) * LUT), n = ramp.length, m = LUT - 1;

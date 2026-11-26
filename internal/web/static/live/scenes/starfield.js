@@ -22,9 +22,9 @@ export default {
     }
     const { chars, fg, cols, rows } = g;
     chars.fill(32);
-    const cx = g.width / 2, cy = g.height / 2, reach = Math.max(g.width, g.height) * 0.11 * P.spread;
+    const cx = g.width / 2, cy = g.height / 2, reach = Math.max(g.width, g.height) * 0.11 * P.spread, T = g.phase("T", P.speed);
     for (const s of this.stars) {
-      const z = 1 - ((s.z + t * 0.07 * P.speed) % 1); // 1 far -> 0 near
+      const z = 1 - ((s.z + T * 0.07) % 1); // 1 far -> 0 near
       const [c, r] = g.cell(g.x0 + cx + (s.x / (z + 0.02)) * reach, g.y0 + cy + (s.y / (z + 0.02)) * reach);
       if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
       const near = 1 - z, i = r * cols + c;

@@ -55,6 +55,7 @@ export default {
 | `g.rgb`, `g.hsl(h, s, l)` (h in turns), `g.mix`, `g.scale` | colours |
 | `g.noise(x, y, z)`, `g.hash(x, y)`, `g.rand(seed)` | smooth noise, hashing, a seeded random function |
 | `g.mm(c, r)`, `g.cell(x, y)` | cell centre in mm, cell at a point in mm |
+| `g.phase(name, rate)` | time scaled by a rate that may change; use `g.phase("T", g.params.speed)` instead of `t * speed` so a speed slider doesn't jump the scene |
 | `g.params`, `g.paramsVersion` | the settings (defaults merged with saved values); the version changes when they do |
 | `g.location` | `{lat, lon}` from Spanwall's day and night settings, if set |
 | `g.monitors`, `g.main` | each monitor's mm box and cell box (`c0, r0, c1, r1`, centre `cc, cr`); `g.main` is the Windows primary monitor |

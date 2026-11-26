@@ -93,6 +93,15 @@ function makeGrid(desk, def, F) {
     chars: new Uint32Array(n).fill(32), fg: new Uint32Array(n).fill(0xffffff), bg: new Uint32Array(n), mask: new Uint8Array(n),
     bgUsed: false, monitors: [], main: null, preview: PREVIEW, params: {}, paramsVersion: 0, location: st.location || null,
     idx: (c, r) => r * cols + c,
+    dt: 0, frameNo: 0, _ph: {},
+    // phase(name, rate): time scaled by a rate that may change (a speed setting).
+    // It advances by rate x frame time once per frame, so changing the rate
+    // changes how fast things move from now on instead of jumping them.
+    phase(name, rate) {
+      const p = G._ph[name] || (G._ph[name] = { v: 0, f: -1 });
+      if (p.f !== G.frameNo) { p.v += rate * G.dt; p.f = G.frameNo; }
+      return p.v;
+    },
     put(c, r, chr, fg, bg) {
       if (c < 0 || r < 0 || c >= cols || r >= rows) return;
       const i = r * cols + c; G.chars[i] = cp(chr);
@@ -560,6 +569,7 @@ function frame(now, first) {
   const w0 = performance.now();
   let changed = false;
   if (!failed) {
+    g.dt = step / 1000; g.frameNo++;
     try { changed = scene.draw(g, (now - t0) / 1000, step / 1000) !== false; }
     catch (e) { failed = e; showError(e); }
   }
