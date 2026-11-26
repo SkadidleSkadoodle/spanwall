@@ -506,7 +506,7 @@ func coverage() (mons []rect, covered [][4]int32, why []string) {
 				return 1
 			}
 			cov[best] = true
-			reason[best] = fmt.Sprintf("%s %q %.2f", className(w), windowText(w), frac)
+			reason[best] = fmt.Sprintf("%s %q %.2f %v on %v", className(w), windowText(w), frac, r, mons[best])
 			return 1
 		})
 		pEnumWindows.Call(ecb, 0)
