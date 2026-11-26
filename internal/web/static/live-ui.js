@@ -253,7 +253,7 @@ function liveRenderSide() {
     <div class="kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join("")}</div>
     <div class="row rate"><button data-lrate="fav" data-n="${esc(s.name)}" class="${s.rating === "fav" ? "on" : ""}" title="Comes up more often in the live slideshow">★ Favourite</button>
       <button data-lrate="ban" data-n="${esc(s.name)}" class="${s.rating === "ban" ? "on" : ""}" title="Never shown by the live slideshow">Ban</button></div>
-    <div class="row"><button data-lside="edit">Edit code</button><button data-lside="dup" title="Copy this scene under a new name to make it your own">Duplicate</button>${on ? "" : `<button data-lside="show" class="primary">Show on desktop</button>`}</div>
+    <div class="row"><button data-lside="edit">Edit code</button><button data-lside="dup" title="Copy this scene under a new name to make it your own">Duplicate</button>${s.user ? `<button data-lside="del" class="danger" title="${s.builtin ? "Remove your edit and go back to the built-in scene" : "Delete this scene"}">${s.builtin ? "Revert" : "Delete"}</button>` : ""}${on ? "" : `<button data-lside="show" class="primary">Show on desktop</button>`}</div>
     <div class="note">Drag the scene to move it, drag a corner or scroll to zoom, the curved arrows or [ ] to turn, H and V to mirror; the desktop follows as you drag. Save &amp; apply to keep it.</div>`;
   const setKey = st.scene + JSON.stringify(LV.schema[st.scene] || null) + (liveValues(st.scene)._theme || "");
   const sets = $("#liveSettings");
@@ -288,6 +288,7 @@ $("#side").addEventListener("click", async (e) => {
     if (pk) { await livePick(pk.dataset.lpick); try { localStorage.setItem("spanwall.liveTab", "settings"); } catch (err) { /* ignore */ } liveShowTab(); }
     else if (sd && sd.dataset.lside === "edit") await liveOpenCode(LV.st.scene);
     else if (sd && sd.dataset.lside === "dup") await liveDuplicate(LV.st.scene);
+    else if (sd && sd.dataset.lside === "del") await liveDelete(LV.st.scene);
     else if (sd && sd.dataset.lside === "show") await liveSet({ enabled: true }, "Showing on the desktop");
     else if (sd && sd.dataset.lside === "resetparams") {
       LV.vals[LV.st.scene] = {}; $("#liveSettings").dataset.key = "";
@@ -336,6 +337,18 @@ async function liveDuplicate(name) {
   await liveLoadScenes(); liveRefresh();
   if (S.libTab === "live" && $("#tab-library").classList.contains("active")) liveRenderCards();
   return r.scene;
+}
+
+async function liveDelete(name) {
+  const s = liveScene(name) || { title: name };
+  const q = s.builtin ? `Remove your edit of ${s.title} and go back to the built-in version?` : `Delete ${s.title} (${name}.js) with its snapshots and settings? This can't be undone.`;
+  if (!confirm(q)) return;
+  await api("/api/live/delete", { name });
+  toast(s.builtin ? `${s.title} is back to the built-in version` : `Deleted ${s.title}`);
+  delete LV.vals[name]; delete LV.schema[name]; delete LV.err[name];
+  liveForgetFrames();
+  await liveLoadScenes(); liveRefresh();
+  if (S.libTab === "live" && $("#tab-library").classList.contains("active")) liveRenderCards();
 }
 
 // ---- code editor --------------------------------------------------------------------------
@@ -417,6 +430,7 @@ function liveRenderCards() {
         <button data-lrate="fav" data-n="${esc(s.name)}" class="${s.rating === "fav" ? "on" : ""}" title="Favourite: comes up more often in the slideshow">★</button>
         <button data-lrate="ban" data-n="${esc(s.name)}" class="${s.rating === "ban" ? "on" : ""}" title="Never show in the slideshow">Ban</button>
         <button data-lact="dup" data-n="${esc(s.name)}" title="Copy this scene under a new name to make it your own">Duplicate</button>
+        ${s.user ? `<button data-lact="del" data-n="${esc(s.name)}" class="danger" title="${s.builtin ? "Remove your edit and go back to the built-in scene" : "Delete this scene"}">${s.builtin ? "Revert" : "Delete"}</button>` : ""}
       </div>
       <div class="acts"><button data-lact="edit" data-n="${esc(s.name)}">Edit code</button><button data-lact="apply" data-n="${esc(s.name)}" class="primary">${cur ? "On screen" : "Apply"}</button></div>
     </div>`;
@@ -465,6 +479,7 @@ $("#libGrid").addEventListener("click", async (e) => {
     if (b.dataset.lrate) await liveRate(name, b.dataset.lrate);
     else if (b.dataset.lact === "apply") await liveSet({ scene: name, enabled: true }, `Showing ${s.title}`);
     else if (b.dataset.lact === "dup") await liveDuplicate(name);
+    else if (b.dataset.lact === "del") await liveDelete(name);
     else {
       if (name !== (LV.st && LV.st.scene)) await api("/api/live", { scene: name });
       switchTab("layout");

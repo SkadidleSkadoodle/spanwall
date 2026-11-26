@@ -46,3 +46,24 @@ func TestScenes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDelete(t *testing.T) {
+	dir := t.TempDir()
+	bi := fstest.MapFS{BuiltinDir + "/plasma.js": {Data: []byte("x")}}
+	if err := Write(dir, "mine", "export default {}"); err != nil {
+		t.Fatal(err)
+	}
+	if left, err := Delete(bi, dir, "mine"); err != nil || left {
+		t.Fatalf("delete mine: %v %v", left, err)
+	}
+	if _, err := Delete(bi, dir, "plasma"); err == nil {
+		t.Fatal("deleting a built-in should fail")
+	}
+	Write(dir, "plasma", "edited")
+	if left, err := Delete(bi, dir, "plasma"); err != nil || !left {
+		t.Fatalf("revert edit: %v %v", left, err)
+	}
+	if _, err := Delete(bi, dir, "nothing"); err == nil {
+		t.Fatal("missing scene should fail")
+	}
+}

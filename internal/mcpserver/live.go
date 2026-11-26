@@ -83,13 +83,16 @@ func registerLive(s *mcp.Server) {
 		})
 
 	type sceneIn struct {
-		Action   string `json:"action,omitempty" jsonschema:"read (default) or write"`
+		Action   string `json:"action,omitempty" jsonschema:"read (default), write, or delete (removes one of the user's scenes with its snapshots and settings; deleting an edited built-in brings the built-in back)"`
 		Name     string `json:"name" jsonschema:"scene name: lower-case letters, digits, - and _"`
 		Code     string `json:"code,omitempty" jsonschema:"the whole scene module (write)"`
 		Activate bool   `json:"activate,omitempty" jsonschema:"write: switch the wallpaper to this scene and turn animation on"`
 	}
-	add(s, "sw_live_scene", "Read or write an animated wallpaper scene (JavaScript). Writing saves it in the user's scenes folder (a built-in scene of the same name is overridden, not changed) and reloads it if it is on screen. Read a built-in scene first for a working example.\n\n"+SceneGuide,
+	add(s, "sw_live_scene", "Read, write or delete an animated wallpaper scene (JavaScript). Writing saves it in the user's scenes folder (a built-in scene of the same name is overridden, not changed) and reloads it if it is on screen. Read a built-in scene first for a working example.\n\n"+SceneGuide,
 		func(in sceneIn) (*mcp.CallToolResult, error) {
+			if in.Action == "delete" {
+				return postJSON("/api/live/delete", map[string]any{"name": in.Name})
+			}
 			if in.Action == "write" {
 				return postJSON("/api/live/scene", map[string]any{"name": in.Name, "code": in.Code, "activate": in.Activate})
 			}

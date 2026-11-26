@@ -146,6 +146,32 @@ func Write(userDir, name, code string) error {
 	return writeAtomic(filepath.Join(userDir, name+".js"), []byte(code))
 }
 
+// Delete removes a user scene (its .js and any converted clip). Built-in
+// scenes can't be deleted; deleting the user's edit of one brings the
+// built-in back. It reports whether a built-in of that name remains.
+func Delete(builtin fs.FS, userDir, name string) (builtinLeft bool, err error) {
+	if !ValidName(name) {
+		return false, fmt.Errorf("no scene %q", name)
+	}
+	_, statErr := fs.Stat(builtin, BuiltinDir+"/"+name+".js")
+	builtinLeft = statErr == nil
+	removed := false
+	for _, f := range []string{name + ".js", name + ".clip.json"} {
+		if err := os.Remove(filepath.Join(userDir, f)); err == nil {
+			removed = true
+		} else if !os.IsNotExist(err) {
+			return builtinLeft, err
+		}
+	}
+	if !removed {
+		if builtinLeft {
+			return true, fmt.Errorf("%s is built in and can't be deleted; ban it to keep it out of the slideshow", name)
+		}
+		return false, fmt.Errorf("no scene %q", name)
+	}
+	return builtinLeft, nil
+}
+
 // ClipOptions are how a converted clip plays.
 type ClipOptions struct {
 	Name        string  `json:"name,omitempty"`

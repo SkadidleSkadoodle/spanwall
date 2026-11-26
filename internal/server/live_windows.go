@@ -270,6 +270,7 @@ func (s *Server) liveRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/live/frame", s.getLiveFrame)
 	mux.HandleFunc("POST /api/live/params", s.setLiveParams)
 	mux.HandleFunc("POST /api/live/duplicate", s.duplicateScene)
+	mux.HandleFunc("POST /api/live/delete", s.deleteScene)
 	mux.HandleFunc("GET /api/live/stats", s.liveStats)
 	mux.HandleFunc("POST /api/live/frame", s.setLiveFrame)
 	mux.HandleFunc("GET /api/live/thumb", s.getLiveThumb)
@@ -689,6 +690,48 @@ func (s *Server) setScene(w http.ResponseWriter, r *http.Request) {
 
 // afterSceneWrite shows a new or changed scene: switches to it if asked,
 // reloads the page if it is the one on screen.
+// deleteScene removes one of the user's scenes with its snapshots, framing,
+// settings and rating. A deleted edit of a built-in brings the built-in back.
+func (s *Server) deleteScene(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	builtinLeft, err := live.Delete(web.FS(), scenesDir(), req.Name)
+	if err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	if d := thumbDir(); d != "" {
+		for _, f := range []string{".png", ".ver", ".world.png", ".world.ver"} {
+			os.Remove(filepath.Join(d, req.Name+f))
+		}
+	}
+	s.session(func(sess *app.Session) (any, error) {
+		l := &sess.Cfg.Live
+		if !builtinLeft {
+			delete(l.Frames, req.Name)
+			delete(l.Params, req.Name)
+			delete(sess.Cfg.Ratings, liveKey(req.Name))
+			if l.Scene == req.Name {
+				l.Scene = ""
+			}
+			if l.Schedule.Day == req.Name {
+				l.Schedule.Day = ""
+			}
+			if l.Schedule.Night == req.Name {
+				l.Schedule.Night = ""
+			}
+		}
+		return nil, sess.Save()
+	})
+	s.afterSceneWrite(req.Name, false)
+	writeJSON(w, map[string]any{"deleted": req.Name, "builtin": builtinLeft}, nil)
+}
+
 func (s *Server) afterSceneWrite(name string, activate bool) {
 	s.session(func(sess *app.Session) (any, error) {
 		if activate {
