@@ -187,6 +187,19 @@ function overlayRect(o) {
   return [o.corner[1] === "r" ? x1 - M - w : x0 + M, o.corner[0] === "b" ? y1 - M - h : y0 + M, o.size * o.aspect, o.size];
 }
 
+// overlayPx: the same, in a monitor view's own pixels, so the readout sits square on the screen
+// (a calibrated monitor's desk-mm shape can be a little skewed); null on the other monitors
+function overlayPx(o, v) {
+  const ms = st.desk.monitors, mi = typeof o.monitor === "number" ? o.monitor : Math.max(0, ms.findIndex((x) => x.primary));
+  if (v.i !== mi || !ms[mi]) return null;
+  const m = ms[mi], P = m.px, M = m.mm, a = 0, b = 2 * (m.nx - 1), c = 2 * (m.nx * (m.ny - 1));
+  const kx = Math.hypot(P[b] - P[a], P[b + 1] - P[a + 1]) / Math.max(1e-6, Math.hypot(M[b] - M[a], M[b + 1] - M[a + 1]));
+  const ky = Math.hypot(P[c] - P[a], P[c + 1] - P[a + 1]) / Math.max(1e-6, Math.hypot(M[c] - M[a], M[c + 1] - M[a + 1]));
+  const k = (kx + ky) / 2, cw = Math.max(3, Math.round(o.size * o.aspect * k)), ch = Math.max(5, Math.round(o.size * k)), mg = Math.round(o.margin * k);
+  const w = o.cols * cw, h = o.rows * ch;
+  return [o.corner[1] === "r" ? v.w - mg - w : mg, o.corner[0] === "b" ? v.h - mg - h : mg, cw, ch];
+}
+
 function outline(m) { // boundary of a monitor's mesh, in mm
   const p = [], at = (i, j) => [m.mm[2 * (j * m.nx + i)], m.mm[2 * (j * m.nx + i) + 1]];
   for (let i = 0; i < m.nx; i++) p.push(at(i, 0));
@@ -347,15 +360,15 @@ function applyParams(values) {
 // preview has one for the whole desk.
 
 const VS = `#version 300 es
-in vec2 aPx; in vec2 aMM; uniform vec2 uWin; out vec2 vMM;
-void main(){ vMM = aMM; gl_Position = vec4(aPx.x / uWin.x * 2.0 - 1.0, 1.0 - aPx.y / uWin.y * 2.0, 0.0, 1.0); }`;
+in vec2 aPx; in vec2 aMM; uniform vec2 uWin; out vec2 vMM; out vec2 vPx;
+void main(){ vMM = aMM; vPx = aPx; gl_Position = vec4(aPx.x / uWin.x * 2.0 - 1.0, 1.0 - aPx.y / uWin.y * 2.0, 0.0, 1.0); }`;
 const FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
-in vec2 vMM; out vec4 o;
+in vec2 vMM; in vec2 vPx; out vec4 o;
 uniform vec2 uOrigin, uCell, uT; uniform mat2 uA; uniform ivec2 uGrid; uniform vec3 uBack, uTintA, uTintB; uniform float uDim; uniform int uTheme;
 uniform usampler2D uGlyph; uniform sampler2D uFg, uBg, uAtlas;
 uniform vec2 uAtlasSize, uSlot; uniform float uPad; uniform int uPerRow;
-uniform int uOv; uniform vec4 uOvRect; uniform ivec2 uOvGrid; uniform usampler2D uOGlyph; uniform sampler2D uOFg, uOBg;
+uniform int uOv, uOvPx; uniform vec4 uOvRect; uniform ivec2 uOvGrid; uniform usampler2D uOGlyph; uniform sampler2D uOFg, uOBg;
 float glyph(int s, vec2 g, vec2 dx, vec2 dy) {
   vec2 inner = uSlot - 2.0 * uPad, k = inner / uAtlasSize;
   vec2 base = vec2(float(s % uPerRow), float(s / uPerRow)) * uSlot + uPad;
@@ -364,7 +377,7 @@ float glyph(int s, vec2 g, vec2 dx, vec2 dy) {
 void main(){
   vec2 g = (uA * vMM + uT - uOrigin) / uCell; // desk mm -> the scene's canvas -> cells
   vec2 gx = dFdx(g), gy = dFdy(g);
-  vec2 h = (vMM - uOvRect.xy) / uOvRect.zw; // the overlay's cells (desk mm, not framed)
+  vec2 h = ((uOvPx == 1 ? vPx : vMM) - uOvRect.xy) / uOvRect.zw; // the overlay's cells: screen pixels on its monitor (square to the screen), desk mm in the editor
   vec2 hx = dFdx(h), hy = dFdy(h);
   ivec2 c = ivec2(floor(g));
   vec3 col = uBack;
@@ -398,7 +411,7 @@ function makeView(x, y, w, h, meshes, i) {
   const p = gl.createProgram();
   gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uA", "uT", "uGrid", "uBack", "uTintA", "uTintB", "uTheme", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow", "uOv", "uOvRect", "uOvGrid", "uOGlyph", "uOFg", "uOBg"]) u[n] = gl.getUniformLocation(p, n);
+  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uA", "uT", "uGrid", "uBack", "uTintA", "uTintB", "uTheme", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow", "uOv", "uOvPx", "uOvRect", "uOvGrid", "uOGlyph", "uOFg", "uOBg"]) u[n] = gl.getUniformLocation(p, n);
   const tex = (filter) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === gl.NEAREST ? gl.NEAREST : gl.LINEAR);
@@ -532,8 +545,8 @@ function drawView(v, G) {
   gl.uniform2f(u.uAtlasSize, AW, AH); gl.uniform2f(u.uSlot, SW, SH); gl.uniform1f(u.uPad, PAD); gl.uniform1i(u.uPerRow, PER_ROW);
   [v.tGlyph, v.tFg, v.tBg, v.tAtlas, v.tOG, v.tOF, v.tOB].forEach((t, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, t); });
   gl.uniform1i(u.uGlyph, 0); gl.uniform1i(u.uFg, 1); gl.uniform1i(u.uBg, 2); gl.uniform1i(u.uAtlas, 3); gl.uniform1i(u.uOGlyph, 4); gl.uniform1i(u.uOFg, 5); gl.uniform1i(u.uOBg, 6);
-  const ov = WORLD ? null : G.ov, rect = ov && v.ovKey === ov.cols + "x" + ov.rows && overlayRect(ov);
-  gl.uniform1i(u.uOv, rect ? 1 : 0);
+  const ov = WORLD ? null : G.ov, rect = ov && v.ovKey === ov.cols + "x" + ov.rows && (v.i >= 0 ? overlayPx(ov, v) : overlayRect(ov));
+  gl.uniform1i(u.uOv, rect ? 1 : 0); gl.uniform1i(u.uOvPx, v.i >= 0 ? 1 : 0);
   if (rect) { gl.uniform4f(u.uOvRect, rect[0], rect[1], rect[2], rect[3]); gl.uniform2i(u.uOvGrid, ov.cols, ov.rows); }
   for (const m of v.meshes) { gl.uniform1f(u.uDim, m.dim); gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0); }
   gl.bindVertexArray(null);
