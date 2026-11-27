@@ -204,6 +204,7 @@ function liveSettingsHTML(name) {
     <label class="set"><span>Colours</span><select data-lp="_theme">${THEME_NAMES.map(([v, l]) => `<option value="${v}" ${v === theme ? "selected" : ""}>${l}</option>`).join("")}</select></label>
     ${theme === "custom" ? `<label class="set"><span>Dark</span><input type="color" data-lp="_tintA" value="${esc(vals._tintA || "#0a3d2a")}"></label>
       <label class="set"><span>Bright</span><input type="color" data-lp="_tintB" value="${esc(vals._tintB || "#c8ffe0")}"></label>` : ""}
+    <label class="set" title="Smaller characters show more detail and cost more to draw"><span>Detail (character size)</span><select data-lp="_cellMM">${[["", "Scene's own"], ["3", "3 mm"], ["2.5", "2.5 mm (more detail)"], ["2", "2 mm (high, more GPU)"], ["1.6", "1.6 mm (very high)"], ["1.3", "1.3 mm (maximum, heavy)"]].map(([v, l]) => `<option value="${v}" ${String(vals._cellMM || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
     <label class="set"><span>Characters</span><select data-lp="_charset">${CHARSET_NAMES.map(([v, l]) => `<option value="${v}" ${v === cs ? "selected" : ""}>${l}</option>`).join("")}</select></label>
     <div class="row"><button data-lside="resetparams" title="Back to the scene's own settings and look">Reset settings</button></div>`;
 }
@@ -305,7 +306,7 @@ $("#side").addEventListener("input", (e) => {
   const el = e.target.closest("[data-lp]");
   if (!LV.on || !el) return;
   const name = LV.st.scene, vals = liveValues(name), k = el.dataset.lp;
-  vals[k] = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value : el.value;
+  vals[k] = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value : k === "_cellMM" ? (+el.value || 0) : el.value;
   if (el.type === "range") { const b = el.parentElement.querySelector("b"); if (b) b.textContent = el.value; }
   if (k === "_theme") { $("#liveSettings").dataset.key = ""; render(); } // custom shows two more colours
   liveParamChanged(name);

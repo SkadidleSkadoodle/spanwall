@@ -153,7 +153,7 @@ Linux).
     (message + line; syntax errors via a module-script onerror). Dragging posts the frame as a
     preview (`/api/live/frame` preview:true -> host stdin `frame <json>`, no reload).
   - Settings: scene `params` declarations, saved in `Config.Live.Params[scene]` (`/api/live/params`,
-    host stdin `params <json>`); `_theme`/`_tintA`/`_tintB` tint on the GPU, `_charset` remaps
+    host stdin `params <json>`); `_theme`/`_tintA`/`_tintB` tint on the GPU, `_cellMM` (Detail) sets one scene's character height (grid cap 1.6M cells instead of 400k, the page reloads its grid), `_charset` remaps
     glyphs by measured density. Duplicate: `/api/live/duplicate` (copies code, frame, params).
     Day/night: `Config.Live.Schedule` (`liveScheduleStep` in the slideshow loop via modePeriod).
     Data scenes: weather (Open-Meteo), system (`/api/live/stats`).

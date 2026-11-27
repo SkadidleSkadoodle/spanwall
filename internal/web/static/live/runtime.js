@@ -17,7 +17,7 @@ const host = document.getElementById("views");
 
 const SW = 40, SH = 72, PAD = 4, AW = 2048, AH = 2048; // atlas: slot size, padding, size
 const PER_ROW = Math.floor(AW / SW), SLOTS = PER_ROW * Math.floor(AH / SH);
-const MAX_CELLS = 400000;
+const MAX_CELLS = 400000, MAX_CELLS_DETAIL = 1600000; // a scene's Detail setting may use up to 4x the cells
 const DEFAULT_FONT = "'Cascadia Mono', Consolas, 'Courier New', monospace";
 
 let st = null, scene = null, g = null, FR = null, views = [], raf = 0, timer = 0, failed = null;
@@ -81,17 +81,21 @@ function makeFrame(desk, f) {
 }
 
 function makeGrid(desk, def, F) {
-  let ch = st.charMM || (def.cell && def.cell.h) || 4.2;
+  // the character size: the scene's own, the user's global setting, or this scene's Detail setting
+  // (_cellMM), which may go finer than the usual cell budget allows
+  const detail = +((st.params || {})._cellMM) || 0;
+  let ch = detail || st.charMM || (def.cell && def.cell.h) || 4.2;
+  const cap = detail ? MAX_CELLS_DETAIL : def.maxCells || MAX_CELLS;
   const aspect = (def.cell && def.cell.aspect) || 0.55;
   // ch is in canvas mm: at the default framing (1:1) that is its size on the
   // monitors, and zooming the canvas zooms the characters with it.
   const w = F.W, h = F.H, x0 = 0, y0 = 0;
-  while (Math.ceil(w / (ch * aspect)) * Math.ceil(h / ch) > MAX_CELLS) ch *= 1.1;
+  while (Math.ceil(w / (ch * aspect)) * Math.ceil(h / ch) > cap) ch *= 1.1;
   const cw = ch * aspect, cols = Math.ceil(w / cw), rows = Math.ceil(h / ch), n = cols * rows;
   const G = {
     cols, rows, n, cw, ch, x0, y0, width: w, height: h,
     chars: new Uint32Array(n).fill(32), fg: new Uint32Array(n).fill(0xffffff), bg: new Uint32Array(n), mask: new Uint8Array(n),
-    bgUsed: false, monitors: [], main: null, preview: PREVIEW, params: {}, paramsVersion: 0, location: st.location || null,
+    bgUsed: false, cellMM: detail, monitors: [], main: null, preview: PREVIEW, params: {}, paramsVersion: 0, location: st.location || null,
     idx: (c, r) => r * cols + c,
     dt: 0, frameNo: 0, _ph: {},
     // phase(name, rate): time scaled by a rate that may change (a speed setting).
@@ -291,7 +295,7 @@ function applyParams(values) {
   const out = {}, decl = (scene && scene.params) || {};
   for (const [k, d] of Object.entries(decl)) out[k] = d && "default" in d ? d.default : undefined;
   Object.assign(out, values);
-  if (g) { g.params = out; g.paramsVersion++; }
+  if (g) { g.params = out; g.paramsVersion++; if ((+values._cellMM || 0) !== (g.cellMM || 0)) setTimeout(() => window.spanwall.reload(), 0); } // a new character size needs a new grid
   const t = values._theme;
   theme = t === "custom" ? [hex3(values._tintA || "#0a3d2a"), hex3(values._tintB || "#c8ffe0")] : THEMES[t] ? THEMES[t].map(hex3) : null;
   const before = CS;
