@@ -61,9 +61,10 @@ and a Claude Desktop extension).
 - **Animated ASCII wallpapers:** a live scene drawn in text behind the desktop
   icons, spanning every monitor by the same physical layout, so characters
   line up across bezels. Built-in scenes (plasma, digital rain, starfield,
-  clock, donut), your own in a few lines of JavaScript, or made from a GIF,
-  video or picture. It pauses itself when windows cover the monitors, when the
-  PC is locked and when the displays are off. See
+  clock, donut, local weather, system stats), your own in a few lines of
+  JavaScript, or made from a GIF, video or picture. It pauses itself when
+  windows cover the monitors, when the PC is locked and when the displays are
+  off. See
   [docs/live-scenes.md](docs/live-scenes.md).
 - **Claude Desktop extension:** ask Claude to preview, set, align (send it the
   photo), find or rotate wallpapers, or write an animated scene.
