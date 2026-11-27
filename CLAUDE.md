@@ -157,6 +157,8 @@ Linux).
     glyphs by measured density. Duplicate: `/api/live/duplicate` (copies code, frame, params).
     Day/night: `Config.Live.Schedule` (`liveScheduleStep` in the slideshow loop via modePeriod).
     Data scenes: weather (Open-Meteo), system (`/api/live/stats`).
+    Overlay: `g.overlay()` is a second small grid in desk mm pinned to a monitor corner (`overlayRect`),
+    own textures (units 4-6) and cell size, drawn over the scene in the same shader; framing doesn't move it.
   - Chrome/Brave/Edge full-screen video reports QUNS_RUNNING_D3D_FULL_SCREEN like a game; only
     non-browser full-screen windows pause every monitor.
 

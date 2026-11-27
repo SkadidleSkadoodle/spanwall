@@ -95,7 +95,7 @@ function makeGrid(desk, def, F) {
   const G = {
     cols, rows, n, cw, ch, x0, y0, width: w, height: h,
     chars: new Uint32Array(n).fill(32), fg: new Uint32Array(n).fill(0xffffff), bg: new Uint32Array(n), mask: new Uint8Array(n),
-    bgUsed: false, cellMM: detail, monitors: [], main: null, preview: PREVIEW, params: {}, paramsVersion: 0, location: st.location || null,
+    bgUsed: false, ov: null, cellMM: detail, monitors: [], main: null, preview: PREVIEW, params: {}, paramsVersion: 0, location: st.location || null,
     idx: (c, r) => r * cols + c,
     dt: 0, frameNo: 0, _ph: {},
     // phase(name, rate): time scaled by a rate that may change (a speed setting).
@@ -113,6 +113,24 @@ function makeGrid(desk, def, F) {
       if (bg !== undefined && bg !== null) { G.bg[i] = bg < 0 ? 0 : (0xff000000 | bg) >>> 0; G.bgUsed = true; }
     },
     text(c, r, s, fg, bg) { let k = 0; for (const chr of String(s)) G.put(c + k++, r, chr, fg, bg); },
+    // overlay(opts): a small second grid pinned to a monitor's corner, in its own character size,
+    // that the framing doesn't move (readouts, labels). opts: cols, rows, size (character height in
+    // mm), aspect, corner ("br", "bl", "tr", "tl"), monitor ("primary" or an index), margin (mm).
+    // bg values are 0xAARRGGBB: the alpha byte is the opacity over the scene (0 = see through).
+    // Returns {cols, rows, chars, fg, bg, put, text, clear}; overlay(null) removes it.
+    overlay(o) {
+      if (!o) { G.ov = null; return null; }
+      const cols = Math.max(1, o.cols | 0), rows = Math.max(1, o.rows | 0), size = Math.max(0.5, +o.size || ch), aspect = +o.aspect || (def.cell && def.cell.aspect) || 0.55;
+      const key = [cols, rows, size, aspect, o.corner || "br", o.monitor == null ? "primary" : o.monitor, +o.margin || 0].join();
+      if (G.ov && G.ov.key === key) return G.ov;
+      const n2 = cols * rows, ov = { key, cols, rows, size, aspect, corner: o.corner || "br", monitor: o.monitor == null ? "primary" : o.monitor, margin: o.margin == null ? size : +o.margin,
+        chars: new Uint32Array(n2).fill(32), fg: new Uint32Array(n2).fill(0xffffff), bg: new Uint32Array(n2), glyphs: new Uint16Array(n2) };
+      ov.put = (c, r, chr, fg, bg) => { if (c < 0 || r < 0 || c >= cols || r >= rows) return; const i = r * cols + c; ov.chars[i] = cp(chr); if (fg !== undefined) ov.fg[i] = fg; if (bg !== undefined) ov.bg[i] = bg >>> 0; };
+      ov.text = (c, r, str, fg, bg) => { let k = 0; for (const chr of String(str)) ov.put(c + k++, r, chr, fg, bg); };
+      ov.clear = (bg = 0) => { ov.chars.fill(32); ov.bg.fill(bg >>> 0); };
+      G.ov = ov;
+      return ov;
+    },
     clear(chr = 32, fg = 0xffffff, bg) {
       G.chars.fill(cp(chr)); G.fg.fill(fg);
       if (bg !== undefined && bg !== null) { G.bg.fill(bg < 0 ? 0 : (0xff000000 | bg) >>> 0); G.bgUsed = true; } else if (G.bgUsed) G.bg.fill(0);
@@ -157,6 +175,16 @@ function placeMonitors(G, desk, F) {
     return { id: m.id, name: m.name, primary: !!m.primary, x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0, c0, r0, c1, r1, cc: ((c0 + c1) / 2) | 0, cr: ((r0 + r1) / 2) | 0 };
   });
   G.anchor = G.home.find((m) => m.primary) || G.home.reduce((a, b) => (!a || b.w * b.h > a.w * a.h ? b : a), null) || G.main;
+}
+
+// overlayRect: where the overlay sits, in desk mm (the monitor's corner, inside its margin)
+function overlayRect(o) {
+  const ms = st.desk.monitors, m = typeof o.monitor === "number" ? ms[o.monitor] : ms.find((x) => x.primary) || ms[0];
+  if (!m) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k < m.mm.length; k += 2) { x0 = Math.min(x0, m.mm[k]); x1 = Math.max(x1, m.mm[k]); y0 = Math.min(y0, m.mm[k + 1]); y1 = Math.max(y1, m.mm[k + 1]); }
+  const w = o.cols * o.size * o.aspect, h = o.rows * o.size, M = o.margin;
+  return [o.corner[1] === "r" ? x1 - M - w : x0 + M, o.corner[0] === "b" ? y1 - M - h : y0 + M, o.size * o.aspect, o.size];
 }
 
 function outline(m) { // boundary of a monitor's mesh, in mm
@@ -214,7 +242,15 @@ function addGlyph(code) {
   return s;
 }
 
+function slotOf(c) {
+  if (c === 32 || c === 0) return 0;
+  if (c < 128) { const s = A.ascii[c]; return s < 0 ? addGlyph(c) : s; }
+  const s = A.map.get(c); return s === undefined ? addGlyph(c) : s;
+}
+
 function mapGlyphs(G) {
+  if (G.ov) { const o = G.ov; for (let i = 0; i < o.chars.length; i++) o.glyphs[i] = slotOf(o.chars[i]); } // the overlay keeps its own characters
+
   if (glyphs.length !== G.n) glyphs = new Uint16Array(G.n);
   const ch = G.chars, out = glyphs, ascii = A.ascii;
   let lastC = -1, lastS = 0;
@@ -319,21 +355,33 @@ in vec2 vMM; out vec4 o;
 uniform vec2 uOrigin, uCell, uT; uniform mat2 uA; uniform ivec2 uGrid; uniform vec3 uBack, uTintA, uTintB; uniform float uDim; uniform int uTheme;
 uniform usampler2D uGlyph; uniform sampler2D uFg, uBg, uAtlas;
 uniform vec2 uAtlasSize, uSlot; uniform float uPad; uniform int uPerRow;
+uniform int uOv; uniform vec4 uOvRect; uniform ivec2 uOvGrid; uniform usampler2D uOGlyph; uniform sampler2D uOFg, uOBg;
+float glyph(int s, vec2 g, vec2 dx, vec2 dy) {
+  vec2 inner = uSlot - 2.0 * uPad, k = inner / uAtlasSize;
+  vec2 base = vec2(float(s % uPerRow), float(s / uPerRow)) * uSlot + uPad;
+  return s == 0 ? 0.0 : textureGrad(uAtlas, (base + fract(g) * inner) / uAtlasSize, dx * k, dy * k).r;
+}
 void main(){
   vec2 g = (uA * vMM + uT - uOrigin) / uCell; // desk mm -> the scene's canvas -> cells
+  vec2 gx = dFdx(g), gy = dFdy(g);
+  vec2 h = (vMM - uOvRect.xy) / uOvRect.zw; // the overlay's cells (desk mm, not framed)
+  vec2 hx = dFdx(h), hy = dFdy(h);
   ivec2 c = ivec2(floor(g));
-  if (c.x < 0 || c.y < 0 || c.x >= uGrid.x || c.y >= uGrid.y) { o = vec4(uBack * uDim, 1.0); return; }
-  int s = int(texelFetch(uGlyph, c, 0).r);
-  vec4 fg = texelFetch(uFg, c, 0), bg = texelFetch(uBg, c, 0);
-  vec3 back = bg.a > 0.5 ? bg.bgr : uBack;
-  vec2 inner = uSlot - 2.0 * uPad;
-  vec2 base = vec2(float(s % uPerRow), float(s / uPerRow)) * uSlot + uPad;
-  vec2 uv = (base + fract(g) * inner) / uAtlasSize;
-  vec2 k = inner / uAtlasSize;
-  float a = s == 0 ? 0.0 : textureGrad(uAtlas, uv, dFdx(g) * k, dFdy(g) * k).r;
-  vec3 ink = fg.bgr;
-  if (uTheme == 1) ink = mix(uTintA, uTintB, clamp(dot(ink, vec3(0.299, 0.587, 0.114)) * 1.3, 0.0, 1.0));
-  o = vec4(mix(back, ink, a) * uDim, 1.0);
+  vec3 col = uBack;
+  if (c.x >= 0 && c.y >= 0 && c.x < uGrid.x && c.y < uGrid.y) {
+    int s = int(texelFetch(uGlyph, c, 0).r);
+    vec4 fg = texelFetch(uFg, c, 0), bg = texelFetch(uBg, c, 0);
+    vec3 ink = fg.bgr;
+    if (uTheme == 1) ink = mix(uTintA, uTintB, clamp(dot(ink, vec3(0.299, 0.587, 0.114)) * 1.3, 0.0, 1.0));
+    col = mix(bg.a > 0.5 ? bg.bgr : uBack, ink, glyph(s, g, gx, gy));
+  }
+  ivec2 hc = ivec2(floor(h));
+  if (uOv == 1 && hc.x >= 0 && hc.y >= 0 && hc.x < uOvGrid.x && hc.y < uOvGrid.y) {
+    vec4 ofg = texelFetch(uOFg, hc, 0), obg = texelFetch(uOBg, hc, 0);
+    col = mix(col, obg.bgr, obg.a);
+    col = mix(col, ofg.bgr, glyph(int(texelFetch(uOGlyph, hc, 0).r), h, hx, hy));
+  }
+  o = vec4(col * uDim, 1.0);
 }`;
 
 // makeView puts a canvas at x, y (window pixels), w x h, drawing meshes
@@ -350,16 +398,19 @@ function makeView(x, y, w, h, meshes, i) {
   const p = gl.createProgram();
   gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uA", "uT", "uGrid", "uBack", "uTintA", "uTintB", "uTheme", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow"]) u[n] = gl.getUniformLocation(p, n);
+  const u = {}; for (const n of ["uWin", "uOrigin", "uCell", "uA", "uT", "uGrid", "uBack", "uTintA", "uTintB", "uTheme", "uDim", "uGlyph", "uFg", "uBg", "uAtlas", "uAtlasSize", "uSlot", "uPad", "uPerRow", "uOv", "uOvRect", "uOvGrid", "uOGlyph", "uOFg", "uOBg"]) u[n] = gl.getUniformLocation(p, n);
   const tex = (filter) => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter === gl.NEAREST ? gl.NEAREST : gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return t;
   };
-  const v = { cv, gl, p, u, w: cv.width, h: cv.height, i, tAtlas: tex(gl.LINEAR_MIPMAP_LINEAR), tGlyph: tex(gl.NEAREST), tFg: tex(gl.NEAREST), tBg: tex(gl.NEAREST),
+  const v = { cv, gl, p, u, w: cv.width, h: cv.height, i, tAtlas: tex(gl.LINEAR_MIPMAP_LINEAR), tGlyph: tex(gl.NEAREST), tFg: tex(gl.NEAREST), tBg: tex(gl.NEAREST), tOG: tex(gl.NEAREST), tOF: tex(gl.NEAREST), tOB: tex(gl.NEAREST), ovKey: "",
     atlasVersion: -1, stale: true, dirty: true, meshes: [] };
   gl.bindTexture(gl.TEXTURE_2D, v.tAtlas); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 2);
+  for (const [t, f, ty, d] of [[v.tOG, gl.R16UI, gl.RED_INTEGER, new Uint16Array(1)], [v.tOF, gl.RGBA8, gl.RGBA, new Uint8Array(4)], [v.tOB, gl.RGBA8, gl.RGBA, new Uint8Array(4)]]) { // complete until a scene adds an overlay
+    gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, f, 1, 1, 0, ty, f === gl.R16UI ? gl.UNSIGNED_SHORT : gl.UNSIGNED_BYTE, d);
+  }
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // grid rows are any width
   setMeshes(v, meshes);
   return v;
@@ -442,6 +493,19 @@ function uploadView(v, G) {
   gl.bindTexture(gl.TEXTURE_2D, v.tGlyph); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, G.cols, G.rows, gl.RED_INTEGER, gl.UNSIGNED_SHORT, glyphs);
   gl.bindTexture(gl.TEXTURE_2D, v.tFg); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, G.cols, G.rows, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(G.fg.buffer));
   if (G.bgUsed) { gl.bindTexture(gl.TEXTURE_2D, v.tBg); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, G.cols, G.rows, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(G.bg.buffer)); }
+  const ov = WORLD ? null : G.ov;
+  if (ov) {
+    const k = ov.cols + "x" + ov.rows;
+    if (v.ovKey !== k) { // (re)size the overlay's textures
+      gl.bindTexture(gl.TEXTURE_2D, v.tOG); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, ov.cols, ov.rows, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, null);
+      gl.bindTexture(gl.TEXTURE_2D, v.tOF); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, ov.cols, ov.rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindTexture(gl.TEXTURE_2D, v.tOB); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, ov.cols, ov.rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      v.ovKey = k;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, v.tOG); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ov.cols, ov.rows, gl.RED_INTEGER, gl.UNSIGNED_SHORT, ov.glyphs);
+    gl.bindTexture(gl.TEXTURE_2D, v.tOF); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ov.cols, ov.rows, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(ov.fg.buffer));
+    gl.bindTexture(gl.TEXTURE_2D, v.tOB); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ov.cols, ov.rows, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(ov.bg.buffer));
+  }
   if (v.atlasVersion !== A.version) {
     gl.bindTexture(gl.TEXTURE_2D, v.tAtlas); gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, A.canvas);
     gl.generateMipmap(gl.TEXTURE_2D); v.atlasVersion = A.version;
@@ -466,8 +530,11 @@ function drawView(v, G) {
   gl.uniform1i(u.uTheme, theme ? 1 : 0);
   if (theme) { gl.uniform3fv(u.uTintA, theme[0]); gl.uniform3fv(u.uTintB, theme[1]); }
   gl.uniform2f(u.uAtlasSize, AW, AH); gl.uniform2f(u.uSlot, SW, SH); gl.uniform1f(u.uPad, PAD); gl.uniform1i(u.uPerRow, PER_ROW);
-  [v.tGlyph, v.tFg, v.tBg, v.tAtlas].forEach((t, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, t); });
-  gl.uniform1i(u.uGlyph, 0); gl.uniform1i(u.uFg, 1); gl.uniform1i(u.uBg, 2); gl.uniform1i(u.uAtlas, 3);
+  [v.tGlyph, v.tFg, v.tBg, v.tAtlas, v.tOG, v.tOF, v.tOB].forEach((t, k) => { gl.activeTexture(gl.TEXTURE0 + k); gl.bindTexture(gl.TEXTURE_2D, t); });
+  gl.uniform1i(u.uGlyph, 0); gl.uniform1i(u.uFg, 1); gl.uniform1i(u.uBg, 2); gl.uniform1i(u.uAtlas, 3); gl.uniform1i(u.uOGlyph, 4); gl.uniform1i(u.uOFg, 5); gl.uniform1i(u.uOBg, 6);
+  const ov = WORLD ? null : G.ov, rect = ov && v.ovKey === ov.cols + "x" + ov.rows && overlayRect(ov);
+  gl.uniform1i(u.uOv, rect ? 1 : 0);
+  if (rect) { gl.uniform4f(u.uOvRect, rect[0], rect[1], rect[2], rect[3]); gl.uniform2i(u.uOvGrid, ov.cols, ov.rows); }
   for (const m of v.meshes) { gl.uniform1f(u.uDim, m.dim); gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_SHORT, 0); }
   gl.bindVertexArray(null);
   v.dirty = false;
